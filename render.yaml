@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: ori-mixer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    region: oregon
+    plan: free
+    branch: main
+    autoDeploy: true
