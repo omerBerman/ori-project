@@ -10,10 +10,10 @@ from flask import Flask, render_template
 # ------------------- configuration variables -------------------
 STATION_COUNT = 4                  # number of “radio” channels
 AUDIO_FILES = [
-    "audio/satlot.mp3",
-    "audio/perfect.mp3",
-    "audio/ohevt.mp3",
-    "audio/another_love.mp3",
+    "audio/song1.mp3",
+    "audio/song2.mp3",
+    "audio/song3.mp3",
+    "audio/song4.mp3",
 ]
 # ---------------------------------------------------------------
 
@@ -30,4 +30,5 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    import os
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
