@@ -1,96 +1,65 @@
-/* ———  GLOBAL  ——— */
-/* iPhone-13 landscape = 844 × 390 px */
-html,body{
-  width:100%;
-  height:100%;
-  margin:0;
-  background:#ffffff;
-  display:flex;
-  justify-content:center;   /* centre horizontally */
-  align-items:center;       /* centre vertically  */
-  font-family:system-ui,sans-serif;
-  overflow:hidden;          /* prevent scroll on rotate */
+/* --- sizes & colors --- */
+:root {
+  --bar-w: 104px;
+  --bar-h: 232px;
+  --gap: 17px;
+  --red: #bd0000;
 }
 
-/* ———  MIXER WRAPPER  ——— */
-/* exactly four bars, centred, gap ≈ 12 vw (≈ 100 px) */
-#mixer{
-  display:flex;
-  gap:17px;            /* exact distance between bars */
-  touch-action:none;        /* smoother drag on iOS */
+/* --- mixer bars --- */
+.v-slider {
+  position: relative;
+  width: var(--bar-w);
+  height: var(--bar-h);
+  border: 3px solid var(--red);
+  background: #fff;
+  overflow: hidden;
 }
 
-/* ———  BAR  ——— */
-/* bars = 232 × 104 px vertically (same as the snippet) */
-.v-slider{
-  position:relative;
-  width:104px;
-  height:232px;
-  border:3px solid #D52C38;
-  border-radius:0px;
-  background:#ffffff;
-  overflow:hidden;
+/* horizontal guides */
+.v-slider::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to top,
+    transparent 0 calc(20% - 1px),
+    #ffc5c5 calc(20% - 1px) 20%
+  );
+  pointer-events: none;
 }
 
-/* horizontal divider lines – five equal sections */
-.v-slider::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    repeating-linear-gradient(
-      to top,
-      transparent 0 calc(20% - 1px),
-      #ffc5c5 calc(20% - 1px) 20%
-    );
-  pointer-events:none;
+/* red fill */
+.slider-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 0;
+  background: var(--red);
+  transition: height 0.15s linear;
 }
 
-/* red fill rising from bottom */
-.slider-fill{
-  position:absolute;
-  left:0;
-  bottom:0;
-  width:100%;
-  height:0;
-  background:#D52C38;
-  border-top:0.2px solid #D52C38; /* matches 0.20 px in snippet */
-  transition:height .15s linear;
+/* invisible input */
+.vol-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  touch-action: none;
+  cursor: pointer;
 }
 
-/* invisible <input type=range> catching pointer events */
-.vol-input{
-  position:absolute;
-  inset:0;
-  opacity:0;
-  cursor:pointer;
+/* ruler */
+.ruler span {
+  width: 32px;
+  height: 2px;
+  background: var(--red);
+  opacity: 0.85;
 }
 
-/* ———  RIGHT-SIDE RULER (optional)  ——— */
-#ruler{
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  height:232px;
-  margin-left:24px;         /* like the white block in snippet */
-}
-#ruler span{
-  width:32px;
-  height:2px;
-  background:#D52C38;
-  opacity:.85;
-}
-
-/* ———  RESPONSIVE FALLBACK  ——— */
-/* On any screen taller than wide (portrait), revert to the previous vertical layout */
-@media (orientation:portrait){
-  #mixer{gap:6vw}
-  .v-slider{
-    width:72px;
-    height:60vh;
-  }
-  #ruler{
-    height:60vh;
-    margin-left:6vw;
-  }
+/* disable text selection / scrolling glitches */
+body,
+.v-slider {
+  user-select: none;
+  touch-action: manipulation;
 }
