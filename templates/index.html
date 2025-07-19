@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta charset="UTF-8">
+  <title>Radio Mixer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:,">
+</head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Radio Mixer</title>
+
+  <!-- Hammer JS CDN (12 kB gz) -->
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+ <div id="mixer">
+  <!-- 4 bars -->
+  <div class="v-slider" data-idx="0"><input class="vol-input" type="range"><div class="slider-fill"></div></div>
+  <div class="v-slider" data-idx="1"><input class="vol-input" type="range"><div class="slider-fill"></div></div>
+  <div class="v-slider" data-idx="2"><input class="vol-input" type="range"><div class="slider-fill"></div></div>
+  <div class="v-slider" data-idx="3"><input class="vol-input" type="range"><div class="slider-fill"></div></div>
+</div>
+
+<div id="ruler">
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<!-- audio tags unchanged -->
+
+  <!-- hidden audio tags -->
+  {% for src in audio_files %}
+  <audio class="track" src="{{ url_for('static', filename=src) }}" loop preload="auto"></audio>
+  {% endfor %}
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

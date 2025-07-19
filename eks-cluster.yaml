@@ -1,0 +1,48 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: upwind-cloud-secure-demo
+  region: us-east-2
+  version: "1.31"
+
+availabilityZones:
+  - us-east-2a
+  - us-east-2b
+
+cloudWatch:
+  clusterLogging: {}
+
+iam:
+  vpcResourceControllerPolicy: true
+  withOIDC: true
+
+privateCluster:
+  enabled: false
+
+vpc:
+  autoAllocateIPv6: false
+  cidr: 192.168.0.0/16
+  clusterEndpoints:
+    privateAccess: false
+    publicAccess: true
+  manageSharedNodeSecurityGroupRules: true
+
+managedNodeGroups:
+  - name: spot-nodes
+    instanceTypes: ["m5.large", "t3.large", "t3.medium"]
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 3
+    spot: true
+    privateNetworking: false
+    disableIMDSv1: true
+    disablePodIMDS: false
+    volumeSize: 20
+    volumeType: gp3
+    volumeEncrypted: true
+    availabilityZones:
+      - us-east-2a
+    iam:
+      withAddonPolicies:
+        ebs: true

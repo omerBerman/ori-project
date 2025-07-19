@@ -1,0 +1,96 @@
+/* ———  GLOBAL  ——— */
+/* iPhone-13 landscape = 844 × 390 px */
+html,body{
+  width:100%;
+  height:100%;
+  margin:0;
+  background:#ffffff;
+  display:flex;
+  justify-content:center;   /* centre horizontally */
+  align-items:center;       /* centre vertically  */
+  font-family:system-ui,sans-serif;
+  overflow:hidden;          /* prevent scroll on rotate */
+}
+
+/* ———  MIXER WRAPPER  ——— */
+/* exactly four bars, centred, gap ≈ 12 vw (≈ 100 px) */
+#mixer{
+  display:flex;
+  gap:17px;            /* exact distance between bars */
+  touch-action:none;        /* smoother drag on iOS */
+}
+
+/* ———  BAR  ——— */
+/* bars = 232 × 104 px vertically (same as the snippet) */
+.v-slider{
+  position:relative;
+  width:104px;
+  height:232px;
+  border:3px solid #BD0000;
+  border-radius:0px;
+  background:#ffffff;
+  overflow:hidden;
+}
+
+/* horizontal divider lines – five equal sections */
+.v-slider::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    repeating-linear-gradient(
+      to top,
+      transparent 0 calc(20% - 1px),
+      #ffc5c5 calc(20% - 1px) 20%
+    );
+  pointer-events:none;
+}
+
+/* red fill rising from bottom */
+.slider-fill{
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:100%;
+  height:0;
+  background:#BD0000;
+  border-top:0.2px solid #BD0000; /* matches 0.20 px in snippet */
+  transition:height .15s linear;
+}
+
+/* invisible <input type=range> catching pointer events */
+.vol-input{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  cursor:pointer;
+}
+
+/* ———  RIGHT-SIDE RULER (optional)  ——— */
+#ruler{
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  height:232px;
+  margin-left:24px;         /* like the white block in snippet */
+}
+#ruler span{
+  width:32px;
+  height:2px;
+  background:#BD0000;
+  opacity:.85;
+}
+
+/* ———  RESPONSIVE FALLBACK  ——— */
+/* On any screen taller than wide (portrait), revert to the previous vertical layout */
+@media (orientation:portrait){
+  #mixer{gap:6vw}
+  .v-slider{
+    width:72px;
+    height:60vh;
+  }
+  #ruler{
+    height:60vh;
+    margin-left:6vw;
+  }
+}
