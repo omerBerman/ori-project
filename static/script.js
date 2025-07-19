@@ -1,9 +1,9 @@
 /* ---------- constants ---------- */
-const STEPS = 4;               // 0‑25‑50‑75‑100 %
-const PCT   = 100 / STEPS;
-const DEFAULT = 3;             // 75 %
-const XFADE  = 2000;           // ms
-const QUIET  = 300;            // ms delay for auto‑fallback
+const STEPS   = 4;          // 0,25,50,75,100 %
+const PCT     = 100 / STEPS;
+const DEFAULT = 3;          // 75 %
+const XFADE   = 2000;       // ms for cross‑fade
+const QUIET   = 300;        // ms before auto‑fallback fires
 
 /* ---------- elements ---------- */
 const sliders = [...document.querySelectorAll(".v-slider")];
@@ -12,39 +12,39 @@ const tracks  = [...document.querySelectorAll(".track")];
 const overlay = document.getElementById("unlock");
 
 /* ---------- state ---------- */
-let active = 0;
-let fading = false;
-let fadeTo = 0;
-let fadeVol = 1;
-let fadeStart = 0;
+let active     = 0;
+let fading     = false;
+let fadeTo     = 0;
+let fadeVol    = 1;
+let fadeStart  = 0;
 let quietTimer = null;
-let unlocked = false;
+let unlocked   = false;
 
 /* ---------- helpers ---------- */
-const pct = s => s * PCT;
-const setBar = (i, p) => (fills[i].style.height = `${p}%`);
+const pct     = s => s * PCT;
+const setBar  = (i, p) => (fills[i].style.height = `${p}%`);
 const stepFrom = (y, box) =>
   Math.max(0, Math.min(STEPS, Math.round((1 - (y - box.top) / box.height) * STEPS)));
-const nextIdx = i => (i + 1) % tracks.length;
+const nextIdx   = i => (i + 1) % tracks.length;
 const audibleAny = () => tracks.some(t => t.volume > 0.0001);
 
-/* ---------- unlock first tap ---------- */
+/* ---------- unlock on first tap ---------- */
 function unlockAudio() {
   if (unlocked) return;
   unlocked = true;
   overlay.classList.add("d-none");
-  tracks.forEach(t => t.play().catch(() => {}));
+  tracks.forEach(t => t.play().catch(()=>{}));
   tracks[0].volume = DEFAULT / STEPS;
+  setBar(0, pct(DEFAULT));
 }
-overlay.addEventListener("click", unlockAudio, { once: true });
+overlay.addEventListener("click", unlockAudio, { once:true });
 
-/* ---------- preload & default bar ---------- */
+/* ---------- preload tracks ---------- */
 tracks.forEach(t => {
   t.loop = true;
   t.volume = 0;
-  t.play().catch(() => {});
+  t.play().catch(()=>{});
 });
-setBar(0, pct(DEFAULT));
 
 /* ---------- never‑silent rule ---------- */
 function ensureNotSilent() {
@@ -57,16 +57,19 @@ function ensureNotSilent() {
   setBar(active, pct(DEFAULT));
 }
 
-/* ---------- fade loop ---------- */
+/* ---------- RAF fade loop ---------- */
 function raf(ts) {
   if (fading) {
     const d = Math.min(1, (ts - fadeStart) / XFADE);
     const from = tracks[active];
     const to   = tracks[fadeTo];
+
     from.volume = fadeVol * (1 - d);
     to.volume   = fadeVol * d;
+
     setBar(active, pct(STEPS) * (from.volume / fadeVol));
     setBar(fadeTo, pct(STEPS) * (to.volume / fadeVol));
+
     if (d === 1) {
       from.pause();
       from.currentTime = to.currentTime;
@@ -79,35 +82,22 @@ function raf(ts) {
 }
 requestAnimationFrame(raf);
 
-/* ---------- volume/fade change ---------- */
-function change(idx, step) {
+/* ---------- change vol / start fade ---------- */
+function change(idx, step){
   const v = step / STEPS;
-  if (idx === active && !fading) {
+  if (idx === active && !fading){
     tracks[active].volume = v;
     setBar(active, pct(step));
     return;
   }
   if (fading) return;
 
-  fading = true;
-  fadeTo = idx;
-  fadeVol = v;
+  fading    = true;
+  fadeTo    = idx;
+  fadeVol   = v;
   fadeStart = performance.now();
 
   const from = tracks[active];
   const to   = tracks[fadeTo];
-  to.currentTime = from.currentTime % to.duration;
-  to.volume = 0;
-  to.play().catch(() => {});
-  from.volume = v;
-  setBar(fadeTo, 0);
-}
 
-/* ---------- interaction per bar ---------- */
-sliders.forEach((slider, idx) => {
-  slider.style.userSelect = "none";
-  const box = slider.getBoundingClientRect();
-  let dragging = false;
-
-  const start = e => {
-    unlockAu
+  to.currentTime = from.currentTime % to.d

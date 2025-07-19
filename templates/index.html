@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Radio Mixer</title>
+    <title>Ori Radio Mixer</title>
 
     <!-- Bootstrap 5 (CSS only) -->
     <link
@@ -16,13 +16,13 @@
   </head>
 
   <body class="bg-white vh-100 d-flex justify-content-center align-items-center">
-    <!-- overlay -->
+    <!-- unlock overlay -->
     <div id="unlock" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex
          justify-content-center align-items-center bg-white text-danger fw-bold fs-4">
       tap to start
     </div>
 
-    <!-- mixer -->
+    <!-- mixer bars + ruler -->
     <div class="container-fluid">
       <div class="row g-0 justify-content-center">
         {% for i in range(station_count) %}
@@ -34,17 +34,21 @@
         </div>
         {% endfor %}
 
-        <!-- ruler -->
+        <!-- ruler on the right -->
         <div class="col-auto d-flex flex-column justify-content-between ms-3 ruler">
           {% for _ in range(5) %}<span></span>{% endfor %}
         </div>
       </div>
     </div>
 
-    <!-- audio -->
-  {% for src in audio_files %}
-  <audio controls>
-    <source src="{{ src }}" type="audio/mpeg">
-    Your browser does not support the audio element.
-  </audio>
-{% endfor %}
+    <!-- hidden audio tags (served from static/audio/) -->
+    {% for src in audio_files %}
+      <audio class="track"
+             src="{{ url_for('static', filename='audio/' ~ src) }}"
+             preload="auto"
+             loop></audio>
+    {% endfor %}
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>
