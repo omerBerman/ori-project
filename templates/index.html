@@ -42,5 +42,9 @@
     </div>
 
     <!-- audio -->
-    {% for src in audio_files %}
-    <audio class="track
+  {% for src in audio_files %}
+  <audio controls>
+    <source src="{{ src }}" type="audio/mpeg">
+    Your browser does not support the audio element.
+  </audio>
+{% endfor %}
