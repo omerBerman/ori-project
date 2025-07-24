@@ -1,38 +1,32 @@
 "use strict";
 
 /**
- * Radio Mixer – mobile friendly version with stronger volume steps.
- * No visual/style changes, only behavior.
+ * Radio Mixer – mobile-friendly version with:
+ * 1) No total silent state (auto-bumps first slider).
+ * 2) Smooth drag on mobile (pointer capture, no accidental scroll).
  */
 
-/* ---- volume steps ---- */
-const LEVELS       = [0, 0.35, 0.7, 1];   // 0%, 35%, 70%, 100%
-const STEPS        = LEVELS.length - 1;   // index from 0..3
-const DEFAULT_STEP = STEPS;               // start/fallback at 100%
+const LEVELS       = [0, 0.35, 0.7, 1];   // volume steps
+const STEPS        = LEVELS.length - 1;
+const DEFAULT_STEP = 3;                   // start/fallback at 100% (index 3)
+const XFADE_MS     = 2000;
+const QUIET_DELAY  = 200;
 
-/* ---- fade & misc constants ---- */
-const XFADE_MS     = 2000;                // crossfade duration
-const QUIET_DELAY  = 300;                 // ms before auto fallback
-
-/* ---- DOM ---- */
 const sliders = [...document.querySelectorAll(".v-slider")];
 const fills   = [...document.querySelectorAll(".slider-fill")];
 const tracks  = [...document.querySelectorAll(".track")];
 const overlay = document.getElementById("unlock");
 
-/* ---- helpers ---- */
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const PCT   = step => LEVELS[step] * 100;
 const next  = i => (i + 1) % tracks.length;
 const audibleAny = () => tracks.some(t => t.volume > 0.0001);
 
 function stepFromY(y, rect) {
-  const rel = 1 - (y - rect.top) / rect.height;       // 0 bottom -> 1 top
-  const s   = Math.round(rel * STEPS);
-  return clamp(s, 0, STEPS);
+  const rel = 1 - (y - rect.top) / rect.height;
+  return clamp(Math.round(rel * STEPS), 0, STEPS);
 }
 
-/* ---- Mixer ---- */
 class Mixer {
   constructor() {
     this.active     = 0;
@@ -43,6 +37,9 @@ class Mixer {
     this.quietTimer = null;
     this.unlocked   = false;
 
+    // For hysteresis (avoid “jumping” while dragging)
+    this.lastSteps = new Array(sliders.length).fill(-1);
+
     this.initAudio();
     this.bindUI();
     requestAnimationFrame(this.raf.bind(this));
@@ -52,22 +49,20 @@ class Mixer {
     tracks.forEach(t => {
       t.loop = true;
       t.volume = 0;
-      t.play().catch(()=>{}); // may be blocked until user gesture
+      t.play().catch(()=>{});
     });
 
-    // show default bar state (100%) for first slider
+    // default UI fill
     this.setBar(0, PCT(DEFAULT_STEP));
   }
 
   unlockAudio() {
     if (this.unlocked) return;
     this.unlocked = true;
-
     if (overlay) {
       overlay.classList.add("d-none");
       overlay.remove();
     }
-
     tracks.forEach(t => t.play().catch(()=>{}));
     tracks[0].volume = LEVELS[DEFAULT_STEP];
     this.setBar(0, PCT(DEFAULT_STEP));
@@ -76,27 +71,44 @@ class Mixer {
   ensureNotSilent() {
     if (audibleAny() || this.fading) return;
 
-    this.active = next(this.active);
-    const fromIdx = this.active === 0 ? tracks.length - 1 : this.active - 1;
-    const prev = tracks[fromIdx];
-    const cur  = tracks[this.active];
-
-    // Wait until metadata is available
-    if (!isFinite(prev.duration) || !isFinite(cur.duration)) {
-      cur.addEventListener("loadedmetadata", () => this.ensureNotSilent(), { once: true });
+    // If absolutely quiet, force slider 0 to default
+    this.active = 0;
+    const first = tracks[0];
+    if (!isFinite(first.duration)) {
+      first.addEventListener("loadedmetadata", () => this.ensureNotSilent(), { once: true });
       return;
     }
-
-    cur.currentTime = prev.currentTime % cur.duration;
-    cur.volume = LEVELS[DEFAULT_STEP];
-    this.setBar(this.active, PCT(DEFAULT_STEP));
+    first.volume = LEVELS[DEFAULT_STEP];
+    this.setBar(0, PCT(DEFAULT_STEP));
   }
 
   setBar(i, percent) {
     fills[i].style.height = `${percent}%`;
   }
 
+  // Guard: if user tries to mute all bars, auto-bump first
+  guardNoSilent(idx, step) {
+    const volAfter = LEVELS[step];
+    // If user set this slider to 0, check if all others are 0 as well:
+    if (volAfter === 0) {
+      const othersOn = tracks.some((t, i) => i !== idx && t.volume > 0.0001);
+      if (!othersOn) {
+        // Force slider 0 to default
+        const forcedStep = DEFAULT_STEP;
+        tracks[0].volume = LEVELS[forcedStep];
+        this.setBar(0, PCT(forcedStep));
+        this.active = 0; // we consider channel 0 active if we forced it
+      }
+    }
+  }
+
   change(idx, step) {
+    // Hysteresis: update only if step changed
+    if (this.lastSteps[idx] === step) return;
+    this.lastSteps[idx] = step;
+
+    this.guardNoSilent(idx, step);
+
     const volVal = LEVELS[step];
     const volPct = PCT(step);
 
@@ -154,7 +166,7 @@ class Mixer {
   }
 
   bindUI() {
-    // unlock on first pointer
+    // Unlock audio on first pointer interaction
     document.addEventListener("pointerdown", () => this.unlockAudio(), { once: true });
 
     sliders.forEach((slider, idx) => {
@@ -162,20 +174,30 @@ class Mixer {
       slider.style.touchAction = "none";
 
       let dragging = false;
+      let pointerId = null;
 
       const start = e => {
         e.preventDefault();
         dragging = true;
+        pointerId = e.pointerId || null;
+        if (pointerId !== null && slider.setPointerCapture) {
+          slider.setPointerCapture(pointerId);
+        }
         move(e);
       };
+
       const move = e => {
         if (!dragging) return;
         const rect = slider.getBoundingClientRect();
         const y    = e.touches ? e.touches[0].clientY : e.clientY;
         this.change(idx, stepFromY(y, rect));
       };
+
       const end = () => {
         dragging = false;
+        if (pointerId !== null && slider.releasePointerCapture) {
+          try { slider.releasePointerCapture(pointerId); } catch(_){}
+        }
         clearTimeout(this.quietTimer);
         this.quietTimer = setTimeout(() => this.ensureNotSilent(), QUIET_DELAY);
       };
