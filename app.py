@@ -33,7 +33,7 @@ def index():
 
 @app.route("/favicon.ico")
 def favicon():
-    # prevent 404s for favicon requests
+    # avoid 404 for favicon
     return ("", 204)
 
 

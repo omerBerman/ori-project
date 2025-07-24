@@ -8,7 +8,6 @@
     />
     <title>Radio Mixer</title>
 
-    <!-- prevent favicon 404 if browser still asks -->
     <link rel="icon" href="data:," />
 
     <!-- Bootstrap 5 (CSS only) -->
@@ -22,13 +21,6 @@
   </head>
 
   <body class="bg-white vh-100 d-flex justify-content-center align-items-center">
-    <!-- unlock overlay -->
-    <div
-      id="unlock"
-      class="position-absolute top-0 bottom-0 start-0 end-0 d-flex justify-content-center align-items-center bg-white text-danger fw-bold fs-4"
-    >
-      tap to start
-    </div>
 
     <!-- mixer bars + ruler -->
     <div class="container-fluid">
@@ -51,17 +43,20 @@
       </div>
     </div>
 
-    <!-- audio tags -->
+    <!-- audio (autoplay muted, we unmute with JS ramp) -->
     {% for src in audio_files %}
     <audio
       class="track"
       src="{{ url_for('static', filename='audio/' ~ src) }}"
       preload="auto"
       loop
+      autoplay
+      muted
+      playsinline
     ></audio>
     {% endfor %}
 
-    <!-- cache-bust param to avoid old JS cached -->
-    <script src="{{ url_for('static', filename='script.js') }}?v=7"></script>
+    <!-- cache-bust param so browser loads the newest JS -->
+    <script src="{{ url_for('static', filename='script.js') }}?v=9"></script>
   </body>
 </html>
