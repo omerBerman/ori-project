@@ -27,7 +27,7 @@
       tap to start
     </div>
 
-    <!-- mixer -->
+    <!-- mixer bars + ruler -->
     <div class="container-fluid">
       <div class="row g-0 justify-content-center">
         {% for i in range(station_count) %}
@@ -39,7 +39,7 @@
         </div>
         {% endfor %}
 
-        <!-- ruler on the right -->
+        <!-- ruler -->
         <div class="col-auto d-flex flex-column justify-content-between ms-3 ruler">
           {% for _ in range(5) %}
           <span></span>
@@ -48,7 +48,7 @@
       </div>
     </div>
 
-    <!-- hidden audio tags (served from static/audio/) -->
+    <!-- audio tags -->
     {% for src in audio_files %}
     <audio
       class="track"
@@ -58,7 +58,7 @@
     ></audio>
     {% endfor %}
 
-    <!-- Your JS (cache-busting query to avoid stale caching) -->
-    <script src="{{ url_for('static', filename='script.js') }}?v=5"></script>
+    <!-- cache-bust param so browser won't keep old JS -->
+    <script src="{{ url_for('static', filename='script.js') }}?v=6"></script>
   </body>
 </html>
