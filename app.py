@@ -13,7 +13,7 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 
 def get_audio_files():
     """
-    Return only file names (no 'audio/' prefix) from static/audio.
+    Return only file names (no directory prefix) from static/audio.
     """
     audio_dir = Path(app.static_folder) / "audio"
     return sorted([f.name for f in audio_dir.glob("*.mp3")])
@@ -29,6 +29,12 @@ def index():
         station_count=STATION_COUNT,
         audio_files=AUDIO_FILES,
     )
+
+
+@app.route("/favicon.ico")
+def favicon():
+    # prevent 404s for favicon requests
+    return ("", 204)
 
 
 if __name__ == "__main__":
