@@ -2,8 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ori Radio Mixer</title>
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>Radio Mixer</title>
 
     <!-- Bootstrap 5 (CSS only) -->
     <link
@@ -17,12 +20,14 @@
 
   <body class="bg-white vh-100 d-flex justify-content-center align-items-center">
     <!-- unlock overlay -->
-    <div id="unlock" class="position-absolute top-0 bottom-0 start-0 end-0 d-flex
-         justify-content-center align-items-center bg-white text-danger fw-bold fs-4">
+    <div
+      id="unlock"
+      class="position-absolute top-0 bottom-0 start-0 end-0 d-flex justify-content-center align-items-center bg-white text-danger fw-bold fs-4"
+    >
       tap to start
     </div>
 
-    <!-- mixer bars + ruler -->
+    <!-- mixer -->
     <div class="container-fluid">
       <div class="row g-0 justify-content-center">
         {% for i in range(station_count) %}
@@ -36,19 +41,24 @@
 
         <!-- ruler on the right -->
         <div class="col-auto d-flex flex-column justify-content-between ms-3 ruler">
-          {% for _ in range(5) %}<span></span>{% endfor %}
+          {% for _ in range(5) %}
+          <span></span>
+          {% endfor %}
         </div>
       </div>
     </div>
 
     <!-- hidden audio tags (served from static/audio/) -->
     {% for src in audio_files %}
-      <audio class="track"
-             src="{{ url_for('static', filename='audio/' ~ src) }}"
-             preload="auto"
-             loop></audio>
+    <audio
+      class="track"
+      src="{{ url_for('static', filename='audio/' ~ src) }}"
+      preload="auto"
+      loop
+    ></audio>
     {% endfor %}
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <!-- Your JS (cache-busting query to avoid stale caching) -->
+    <script src="{{ url_for('static', filename='script.js') }}?v=5"></script>
   </body>
 </html>

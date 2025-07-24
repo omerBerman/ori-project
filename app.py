@@ -1,23 +1,23 @@
 """
-Tiny Flask server.
-Run:  pip install -r requirements.txt
-      python app.py
-Then browse to http://127.0.0.1:5000
+Tiny Flask server for the radio mixer project.
 """
 
+import os
+from pathlib import Path
 from flask import Flask, render_template
 
-# ------------------- configuration variables -------------------
-STATION_COUNT = 4                  # number of “radio” channels
-AUDIO_FILES = [
-    "audio/song1.mp3",
-    "audio/song2.mp3",
-    "audio/song3.mp3",
-    "audio/song4.mp3",
-]
-# ---------------------------------------------------------------
+# ------------------- configuration -------------------
+STATION_COUNT = 4  # number of “radio” channels
 
+# Create the Flask app
 app = Flask(__name__, static_folder="static", template_folder="templates")
+
+# Build AUDIO_FILES list automatically from /static/audio
+AUDIO_DIR = Path(app.static_folder) / "audio"
+AUDIO_FILES = sorted([f.name for f in AUDIO_DIR.glob("*.mp3")])
+# If you prefer manual order, just replace the line above with an explicit list:
+# AUDIO_FILES = ["song1.mp3", "song2.mp3", "song3.mp3", "song4.mp3"]
+# -----------------------------------------------------
 
 
 @app.route("/")
@@ -30,5 +30,6 @@ def index():
 
 
 if __name__ == "__main__":
-    import os
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # On Render the PORT env var is set. Locally default to 5000.
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
