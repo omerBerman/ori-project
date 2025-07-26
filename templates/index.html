@@ -2,31 +2,33 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <title>Radio Mixer</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
-  <div id="mixer-wrap">
-    <div class="mixer-row">
+  <div id="mixer-wrap" aria-label="radio mixer">
+    <div class="mixer-row" role="group" aria-label="volume bars">
       {% for i in range(station_count) %}
-      <div class="v-slider" data-idx="{{ i }}">
+      <div class="v-slider" data-idx="{{ i }}" aria-label="channel {{ i + 1 }}">
         <div class="slider-fill"></div>
       </div>
       {% endfor %}
     </div>
 
-    <!-- ruler: 4 ticks at 20/40/60/80% -->
+    <!-- ruler: 5 ticks. ממוקמים על 20/40/60/80% + תחתון -->
     <div class="ruler" aria-hidden="true">
-      <span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span>
     </div>
   </div>
 
-  <!-- hidden audio element the code already uses -->
+  <!-- single audio element, כפי שיש לך בפרויקט -->
   <audio id="player" preload="auto" playsinline></audio>
 
   <script>
+    /* Flask will inject the list of file names */
     window.TRACK_URLS = {{ audio_files | tojson }};
   </script>
   <script src="{{ url_for('static', filename='script.js') }}"></script>

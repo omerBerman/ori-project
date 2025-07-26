@@ -1,203 +1,233 @@
-"use strict";
+/* =========================================================
+ * Radio Mixer — script.js
+ * - 4 square sliders
+ * - click toggles channel: same bar -> off & advance next
+ * - different bar -> switch to that bar
+ * - UI shows 80% fill when active, 0% when off
+ * - Audio: crossfade between two <audio> elements (ping-pong)
+ * - Mobile safe: unlock on first pointer/touch
+ * ======================================================= */
 
-/* ───── visuals timing ─────
-   new bar rises fast, old bar falls slow */
-const DISPLAY_ACTIVE = 80;
-const DISPLAY_IDLE   = 0;
+/* ---------- configuration ---------- */
+const LEVEL_PCT        = 80;     // UI fill when active
+const FILL_UP_MS       = 280;    // fill rise
+const FILL_DOWN_MS     = 450;    // fill drop (slower)
+const AUDIO_FADE_IN_MS = 200;    // audio in
+const AUDIO_FADE_OUT_MS= 280;    // audio out (slightly slower)
+const MIN_VOL          = 0.0;
+const MAX_VOL          = 1.0;
 
-const DIP_MS   = 180;                  // audio dip/canplay/ramp (כמו קודם)
-const DOWN_MS  = Math.round(DIP_MS/2);
-const UP_MS    = DIP_MS - DOWN_MS;
+/* ---------- elements ---------- */
+const sliders = Array.from(document.querySelectorAll('.v-slider'));
+const fills   = Array.from(document.querySelectorAll('.slider-fill'));
+const RULER   = document.querySelector('.ruler');
 
-const RISE_MS  = 160;                  // new bar fill (מהר)
-const FALL_MS  = 420;                  // old bar fall (איטי ≈60% איטי יותר)
+/* one logical player built from two <audio> elements for crossfade */
+const players = [
+  document.getElementById('player'),
+  document.createElement('audio')
+];
+players[0].setAttribute('playsinline', '');
+players[1].setAttribute('playsinline', '');
+players[1].preload = 'auto';
+document.body.appendChild(players[1]); // hidden but present for iOS
+players.forEach(a => {
+  a.loop = true;
+  a.volume = 0;
+});
 
-/* elements & data */
-const player   = document.getElementById("player");
-const startBtn = document.getElementById("startOverlay");
-const sliders  = [...document.querySelectorAll(".v-slider")];
-const fills    = [...document.querySelectorAll(".slider-fill")];
-const URLS     = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
+/* track list injected from Flask */
+const TRACKS = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
 
-let activeIdx  = 0;
-let durations  = new Array(URLS.length).fill(0);
-let radioEpoch = Date.now();
-let switching  = false;
-let tapLockMs  = 0;
-let started    = false;
+/* durations and global radio clock */
+const meta = TRACKS.map(() => ({ duration: 0 }));
+let bootTime = performance.now() / 1000; // seconds base
 
-/* utils */
-const log = (...a)=>console.log("[mixer]", ...a);
-const err = (...a)=>console.error("[mixer]", ...a);
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const nextIdx = i => (i + 1) % URLS.length;
-const nowMs   = () => performance.now();
+/* ui state */
+let active = 0;                        // current channel index audible
+let currentPlayer = 0;                 // which audio element is 'from'
+let isFading = false;
 
-function setFill(i, pct){ if (fills[i]) fills[i].style.height = `${pct}%`; }
-function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_ACTIVE:DISPLAY_IDLE)); }
+/* per bar animation state */
+const nowFill = fills.map(() => 0);          // current height %
+const tgtFill = fills.map(() => 0);          // target height %
+const upRate  = LEVEL_PCT / FILL_UP_MS;      // % per ms
+const dnRate  = LEVEL_PCT / FILL_DOWN_MS;    // % per ms
 
-/* durations */
-function getDuration(src){
-  return new Promise(resolve=>{
-    const a = new Audio();
-    a.preload = "metadata";
-    a.src = src;
-    a.addEventListener("loadedmetadata", ()=> resolve(isFinite(a.duration)?a.duration:0), { once:true });
-    a.addEventListener("error", ()=> resolve(0), { once:true });
+/* ---------- helpers ---------- */
+const clamp01  = v => Math.max(0, Math.min(1, v));
+const pctToStr = p => `${p.toFixed(3)}%`;
+const nextIdx  = i => (i + 1) % TRACKS.length;
+
+function barOn(i){
+  tgtFill[i] = LEVEL_PCT;
+}
+function barOff(i){
+  tgtFill[i] = 0;
+}
+
+function setFillInstant(i, p){
+  nowFill[i] = tgtFill[i] = p;
+  fills[i].style.height = pctToStr(p);
+}
+
+/* compute where song i should be (“radio style”) */
+function playheadFor(i){
+  const d = meta[i].duration || 1;
+  const now = performance.now() / 1000;
+  const pos = (now - bootTime) % d;
+  return pos < 0 ? pos + d : pos;
+}
+
+/* load metadata (duration) once per track */
+function ensureMetadata(i){
+  return new Promise((resolve) => {
+    if (meta[i].duration > 0) return resolve();
+    const tmp = document.createElement('audio');
+    tmp.preload = 'metadata';
+    tmp.src = TRACKS[i];
+    tmp.addEventListener('loadedmetadata', () => {
+      meta[i].duration = tmp.duration || 0;
+      resolve();
+    }, { once:true });
+    // fallback resolve after timeout to avoid hang
+    setTimeout(() => resolve(), 1500);
   });
 }
-async function preloadDurations(){
-  for (let i=0;i<URLS.length;i++){
-    durations[i] = await getDuration(URLS[i]).catch(()=>0);
-  }
-}
-function computeOffsetSeconds(i){
-  const dur = durations[i] || 0;
-  if (dur <= 0) return 0;
-  const elapsed = (Date.now() - radioEpoch) / 1000;
-  return elapsed % dur;
-}
 
-/* waits */
-function waitEvent(el, ev, timeoutMs=5000){
-  return new Promise((resolve, reject)=>{
-    let done=false;
-    const ok=()=>{ if(done) return; done=true; cleanup(); resolve(); };
-    const bad=()=>{ if(done) return; done=true; cleanup(); reject(new Error(ev+" error")); };
-    const to=setTimeout(()=>{ if(done) return; done=true; cleanup(); reject(new Error("timeout "+ev)); }, timeoutMs);
-    function cleanup(){
-      clearTimeout(to);
-      el.removeEventListener(ev, ok);
-      el.removeEventListener("error", bad);
+/* start playing specific track on a given <audio> element */
+async function armPlayer(player, trackIdx){
+  await ensureMetadata(trackIdx);
+  player.src = TRACKS[trackIdx];
+  try {
+    // set playhead to radio position
+    const t = playheadFor(trackIdx);
+    // must await loadedmetadata to set currentTime safely
+    await new Promise(res => {
+      if (player.readyState >= 1) return res();
+      player.addEventListener('loadedmetadata', res, { once:true });
+    });
+    if (isFinite(player.duration) && player.duration > 0){
+      player.currentTime = t % player.duration;
     }
-    el.addEventListener(ev, ok,  { once:true });
-    el.addEventListener("error", bad, { once:true });
-  });
-}
-
-/* animations */
-function animateTo(i, targetPct, ms){
-  const startPct = parseFloat(fills[i].style.height) || 0;
-  const t0 = nowMs();
-  function loop(t){
-    const k = Math.min(1, (t - t0)/ms);
-    const pct = startPct + (targetPct - startPct)*k;
-    setFill(i, pct);
-    if (k < 1) requestAnimationFrame(loop);
+  } catch (e) {
+    // ignore, we will still try to play
   }
-  requestAnimationFrame(loop);
+  await player.play().catch(()=>{});
 }
 
-async function dipDown(to=0.02, ms=DOWN_MS){
-  return new Promise(res=>{
-    const startVol = player.volume || 1;
-    const t0 = nowMs();
-    function step(t){
-      const k = Math.min(1, (t - t0)/ms);
-      const v = startVol + (to - startVol)*k;
-      player.volume = clamp01(v);
-      if (k < 1) requestAnimationFrame(step); else res();
+/* crossfade between players */
+async function crossfade(toIdx){
+  if (isFading) return;
+  isFading = true;
+
+  const fromP = players[currentPlayer];
+  const toP   = players[currentPlayer ^ 1];
+
+  await armPlayer(toP, toIdx);
+
+  const start = performance.now();
+  const outDur = AUDIO_FADE_OUT_MS;
+  const inDur  = AUDIO_FADE_IN_MS;
+
+  function step(ts){
+    const tOut = clamp01((ts - start) / outDur);
+    const tIn  = clamp01((ts - start) / inDur);
+
+    const vOut = clamp01(1 - tOut);
+    const vIn  = clamp01(tIn);
+
+    fromP.volume = vOut;
+    toP.volume   = vIn;
+
+    if (tOut >= 1 && tIn >= 1){
+      fromP.pause();
+      fromP.volume = 0;
+      currentPlayer ^= 1;
+      isFading = false;
+    } else {
+      requestAnimationFrame(step);
     }
-    requestAnimationFrame(step);
-  });
-}
-function rampUp(to=1, ms=UP_MS){
-  const startVol = player.volume || 0.02;
-  const t0 = nowMs();
-  function step(t){
-    const k = Math.min(1, (t - t0)/ms);
-    const v = startVol + (to - startVol)*k;
-    player.volume = clamp01(v);
-    if (k < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-/* switch */
-async function switchTo(index){
-  if (switching) return;
-  const t = nowMs();
-  if (t < tapLockMs) return;
-  tapLockMs = t + DIP_MS + 120;
-
-  switching = true;
-
-  // visual: old falls slow, new rises fast
-  const oldIdx = activeIdx;
-  if (oldIdx !== index) animateTo(oldIdx, DISPLAY_IDLE, FALL_MS);
-  animateTo(index, DISPLAY_ACTIVE, RISE_MS);
-
-  const src    = URLS[index];
-  const offset = computeOffsetSeconds(index);
-
-  try {
-    await dipDown(0.02, DOWN_MS);
-
-    player.src = src;
-    player.load();
-    await waitEvent(player, "canplay", 5000).catch(()=>{});
-    try { player.currentTime = offset; } catch(_){}
-    await player.play().catch(()=>{});
-    try { player.currentTime = offset; } catch(_){}
-
-    rampUp(1, UP_MS);
-    activeIdx = index;
-  } catch(e){
-    err("switchTo failed:", e);
-  } finally {
-    switching = false;
+/* handle bar click */
+function handleTap(idx){
+  if (idx === active){
+    // tap same bar -> turn it off and advance to next
+    const next = nextIdx(active);
+    barOff(active);
+    barOn(next);
+    crossfade(next);
+    active = next;
+  } else {
+    // switch directly
+    barOff(active);
+    barOn(idx);
+    crossfade(idx);
+    active = idx;
   }
 }
 
-/* start flow */
-async function startPlayback(){
-  if (started) return;
-  started = true;
-
-  await preloadDurations().catch(()=>{});
-
-  try {
-    player.src = URLS[0];
-    player.loop = true;
-    await waitEvent(player, "canplay", 5000).catch(()=>{});
-    try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
-    await player.play();
-    try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
-    player.volume = 1;
-    showOnly(0);
-    // לוודא שהמילוי מתחיל ב־80%
-    animateTo(0, DISPLAY_ACTIVE, RISE_MS);
-  } catch(e){
-    err("startPlayback play failed:", e);
+/* animate fills smoothly with different rise/fall speeds */
+function animate(){
+  const dt = 16; // approximate per frame ms
+  for (let i=0;i<fills.length;i++){
+    const target = tgtFill[i];
+    const cur    = nowFill[i];
+    if (Math.abs(target - cur) < 0.1){
+      nowFill[i] = target;
+    } else if (target > cur){
+      nowFill[i] = Math.min(target, cur + upRate * dt);
+    } else {
+      nowFill[i] = Math.max(target, cur - dnRate * dt);
+    }
+    fills[i].style.height = pctToStr(nowFill[i]);
   }
-
-  startBtn.style.display = "none";
+  requestAnimationFrame(animate);
 }
 
-/* init */
-function init(){
-  if (!URLS.length) { err("no TRACK_URLS"); return; }
+/* unlock audio on first gesture (iOS) */
+function installUnlock(){
+  const unlock = () => {
+    players.forEach(a => a.play().then(()=>a.pause()).catch(()=>{}));
+    document.removeEventListener('pointerdown', unlock);
+    document.removeEventListener('touchstart', unlock);
+  };
+  document.addEventListener('pointerdown', unlock, { passive:true, once:true });
+  document.addEventListener('touchstart',  unlock, { passive:true, once:true });
+}
 
-  showOnly(0);
+/* ----- init ----- */
+async function init(){
+  if (!TRACKS.length || sliders.length !== fills.length){
+    console.warn('mixer: invalid DOM or no tracks');
+    return;
+  }
 
-  startBtn.addEventListener("click", startPlayback, { passive:true });
+  installUnlock();
 
-  const startOnce = () => startPlayback();
-  document.addEventListener("pointerdown", startOnce, { once:true, capture:true, passive:true });
-  document.addEventListener("touchstart", startOnce,  { once:true, capture:true, passive:true });
-  document.addEventListener("click", startOnce,       { once:true, capture:true, passive:true });
-
-  sliders.forEach((slider, idx)=>{
-    slider.addEventListener("pointerdown", async (e)=>{
-      e.preventDefault();
-      if (!started) return;
-      if (idx === activeIdx) {
-        await switchTo(nextIdx(activeIdx));
-      } else {
-        await switchTo(idx);
-      }
-    }, { passive:false });
+  // UI events: click/tap only (אין גרירה)
+  sliders.forEach((el, i)=>{
+    el.addEventListener('click',   ()=>handleTap(i), { passive:true });
+    el.addEventListener('pointerup', ()=>handleTap(i), { passive:true });
   });
+
+  // boot: channel 0 at 80%
+  active = 0;
+  setFillInstant(0, LEVEL_PCT);
+  for (let i=1;i<fills.length;i++) setFillInstant(i, 0);
+
+  // prepare and start first player
+  currentPlayer = 0;
+  await armPlayer(players[currentPlayer], active);
+  players[currentPlayer].volume = 1;
+
+  // keep the alternate player warmed
+  players[currentPlayer ^ 1].volume = 0;
+
+  requestAnimationFrame(animate);
 }
 
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener('DOMContentLoaded', init);
