@@ -1,124 +1,87 @@
-:root{
-  --accent: #D52C38;        /* צבע אדום מהפיגמה */
-  --border: 3px;            /* עובי מסגרת */
-
-  /* מידות פיגמה */
-  --bar-w: 104px;
-  --bar-h: 390px;
-  --bar-gap: 17px;
-
-  /* קווי חלוקה פנימיים (שקיפות עדינה) */
-  --line-alpha: 0.22;
-
-  /* שנתות ימין */
-  --tick-l: 104px;          /* אורך השנתה = 104px */
-  --tick-h: 3px;            /* גובה השנתה = 3px */
-}
-
-html, body{
+html, body {
   height: 100%;
+  overscroll-behavior: contain; /* help prevent scroll while dragging */
 }
 
-body{
+body {
   margin: 0;
-  background: #fff;
-  color: var(--accent);
+  padding: 0;
+  background: #ffffff;
+  color: #bd0000;
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* one-time start overlay */
+.start-overlay {
+  position: fixed;
+  inset: 0;
   display: grid;
   place-items: center;
+  background: #ffffff;
+  color: #bd0000;
+  font-weight: 700;
+  font-size: 24px;
+  border: none;
+  z-index: 10;
+  cursor: pointer;
 }
 
-/* עוטף הכל – מוודא יישור ויציבות */
-#mixer-wrap{
-  display: flex;
-  align-items: center;
-  gap: 24px;                /* רווח לסרגל הימני */
-  contain: layout size;     /* מצמצם rounding בספארי */
-}
-
-/* שורת 4 הסליידרים – מרווח מדויק 17px */
-.mixer-row{
-  display: flex;
-  align-items: flex-start;
-  gap: var(--bar-gap);
-  height: var(--bar-h);     /* גובה אחיד */
-}
-
-/* סליידר – קצוות מרובעים, גודל מדויק */
-.v-slider{
-  flex: 0 0 var(--bar-w);
-  width: var(--bar-w);
-  height: var(--bar-h);
+/* slider container */
+.v-slider {
+  position: relative;
+  width: 80px;           /* adjust to match your design */
+  height: 400px;         /* total bar height */
+  border: 3px solid #bd0000;
   box-sizing: border-box;
-  border: var(--border) solid var(--accent);
-  border-radius: 0;                 /* חד, בלי עיגול */
+  border-radius: 8px;    /* if you want square corners: set to 0 */
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
   cursor: pointer;
-
-  /* 4 קווי פנים בגבהים 20/40/60/80% */
-  background-image:
-    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
-    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
-    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
-    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px);
-  background-size: 100% 20%;
-  background-position:
-    bottom 20% left,
-    bottom 40% left,
-    bottom 60% left,
-    bottom 80% left;
-  background-repeat: no-repeat;
 }
 
-/* המילוי האדום – נשלט ע״י JS */
-.slider-fill{
+/* the fill (red) */
+.slider-fill {
   position: absolute;
-  inset: auto 0 0 0;  /* bottom anchored */
+  bottom: 0;
+  width: 100%;
   height: 0%;
-  background: var(--accent);
+  background: #bd0000;
+  transition: height 0.05s linear;
 }
 
-/* סרגל ימין – 5 שנתות */
-.ruler{
-  position: relative;
-  width: calc(var(--tick-l) + 8px); /* מעט מרווח לימין */
-  height: var(--bar-h);
-  box-sizing: border-box;
-  padding-top: var(--border);
-  padding-bottom: var(--border);
-}
-
-/* שנתה חדה */
-.ruler span{
+/* invisible range input to capture consistent pointer events */
+.v-slider .vol-input {
   position: absolute;
-  right: 0;
-  width: var(--tick-l);
-  height: var(--tick-h);
-  background: var(--accent);
-  border-radius: 0;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  padding: 0;
 }
 
-/* מיקומים: 20/40/60/80% + תחתון (97%) */
-.ruler span:nth-child(1){ top: calc(20% - var(--tick-h)/2); }
-.ruler span:nth-child(2){ top: calc(40% - var(--tick-h)/2); }
-.ruler span:nth-child(3){ top: calc(60% - var(--tick-h)/2); }
-.ruler span:nth-child(4){ top: calc(80% - var(--tick-h)/2); }
-.ruler span:nth-child(5){ top: calc(97% - var(--tick-h)/2); }
-
-/* התאמה ל-iPhone 12 (390×844). אם צפוף, נקטין בעדינות. */
-@media (max-width: 430px){
-  #mixer-wrap{
-    transform-origin: center;
-    transform: scale(0.95);
-  }
+/* inner lines */
+.v-slider {
+  background-image:
+    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
+    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
+    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
+    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px);
+  background-size: 100% 20%;
+  background-position: bottom;
+  background-repeat: repeat-y;
 }
 
-/* לנדסקייפ נמוך – הקטנה קלה */
-@media (orientation: landscape) and (max-height: 420px){
-  #mixer-wrap{
-    transform: scale(0.92);
-  }
+/* ruler on the right */
+.ruler span {
+  display: block;
+  width: 40px;
+  height: 3px;
+  background: #bd0000;
+  margin: 30px 0; /* adjust spacing */
 }
