@@ -11,8 +11,8 @@
   --inner-line-color: rgba(213, 44, 56, 0.28);
   --inner-line-thickness: 1px;
 
-  /* default CSS transition (JS may override per direction) */
-  --fill-transition-ms: 250ms; /* ~50% slower than earlier 140ms */
+  /* base CSS transition (JS overrides per direction) */
+  --fill-transition-ms: 210ms;
 }
 
 /* ===== Base ===== */
@@ -27,7 +27,7 @@ body {
   overscroll-behavior: contain;
 }
 
-/* start overlay */
+/* one-time start overlay */
 .start-overlay{
   position: fixed;
   inset: 0;
@@ -42,17 +42,18 @@ body {
   cursor: pointer;
 }
 
-/* spacing between columns – ensures exact 17px gap */
+/* container width similar to Figma canvas */
+.container-fluid{
+  max-width: 844px;
+}
+
+/* spacing between bars: exact 17px gap */
 .row.g-0.justify-content-center > .col-auto {
   margin-left: calc(var(--bar-gap) / 2);
   margin-right: calc(var(--bar-gap) / 2);
 }
 
-/* ===== Mixer layout ===== */
-.container-fluid{
-  max-width: 844px; /* close to Figma canvas width in landscape */
-}
-
+/* mixer layout */
 .mixer-row{
   display: flex;
   align-items: flex-start;
@@ -63,8 +64,8 @@ body {
 
 .bars{ margin: 0; }
 
-/* ===== Slider bar ===== */
-.v-slider {
+/* ===== Bar ===== */
+.v-slider{
   position: relative;
   width: var(--bar-width);
   height: var(--bar-height);
@@ -76,19 +77,20 @@ body {
   touch-action: manipulation;
   cursor: pointer;
 
-  /* five inner divisions */
-  background-image: linear-gradient(
+  /* 4 inner lines at 20%, 40%, 60%, 80% */
+  background-image: repeating-linear-gradient(
     to top,
+    var(--inner-line-color) 0,
     var(--inner-line-color) var(--inner-line-thickness),
-    transparent 0
+    transparent var(--inner-line-thickness),
+    transparent 20%
   );
-  background-size: 100% calc(var(--bar-height) / 5);
   background-position: bottom;
-  background-repeat: repeat-y;
+  background-repeat: no-repeat;
 }
 
 /* red fill */
-.slider-fill {
+.slider-fill{
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 0%;
@@ -97,25 +99,31 @@ body {
 }
 
 /* invisible input to capture taps */
-.v-slider .vol-input {
+.v-slider .vol-input{
   position: absolute;
   inset: 0;
   opacity: 0;
   -webkit-appearance: none;
   appearance: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  margin: 0; padding: 0; border: 0;
 }
 
-/* ===== Right ruler aligned to inner bar area ===== */
+/* ===== Ruler aligned to inner area ===== */
 .ruler{
   flex: none;
-  height: calc(var(--bar-height) - 2 * var(--bar-border));
-  margin-top: var(--bar-border);  /* align to inner area top edge */
+
+  /* inner content height (exclude borders) */
+  --inner-h: calc(var(--bar-height) - 2 * var(--bar-border));
+
+  /* top of first tick at 20% of inner area */
+  margin-top: calc(var(--bar-border) + 0.2 * var(--inner-h));
+
+  /* cover 80% of inner area (20% -> 100%) for 4 ticks */
+  height: calc(0.8 * var(--inner-h));
+
   display: flex;
   flex-direction: column;
-  justify-content: space-between; /* 5 evenly spaced ticks */
+  justify-content: space-between; /* 4 ticks */
   pointer-events: none;
 }
 
@@ -127,17 +135,17 @@ body {
 }
 
 /* ===== Responsive tweaks ===== */
-@media (max-width: 430px) {
-  :root {
+@media (max-width: 430px){
+  :root{
     --bar-width: 96px;
     --bar-height: 214px;
-    --bar-gap: 17px; /* keep exact */
+    --bar-gap: 17px;
   }
   .mixer-row{ gap: 28px; }
 }
 
-@media (max-width: 375px) {
-  :root {
+@media (max-width: 375px){
+  :root{
     --bar-width: 90px;
     --bar-height: 200px;
   }

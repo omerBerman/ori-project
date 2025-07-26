@@ -2,14 +2,12 @@
 
 /**
  * Single <audio> + radio clock + one-time start overlay.
- * Logic unchanged; visuals improved:
- * - Per-direction bar speeds:
- *     RISE_MS  = faster
- *     FALL_MS  = slower
- * - Ruler alignment handled in CSS/HTML.
+ * Logic unchanged. Visual bars:
+ * - 80% active (aligned to the 4th inner line).
+ * - Per-direction speeds (rise vs fall).
  */
 
-const DISPLAY_ACTIVE = 80;
+const DISPLAY_ACTIVE = 80;  // must be exactly 80 to hit the 4th line
 const DISPLAY_IDLE   = 0;
 
 /* audio dip timings */
@@ -17,9 +15,9 @@ const DIP_MS   = 180;
 const DOWN_MS  = Math.round(DIP_MS / 2);
 const UP_MS    = DIP_MS - DOWN_MS;
 
-/* bar animation timings (edit these values to tune speeds) */
-const RISE_MS  = 240;  // when bar grows to 80%
-const FALL_MS  = 300;  // when bar shrinks to 0% (slower)
+/* bar visual speeds (edit these) */
+const RISE_MS  = 240;  // fill grows to 80%
+const FALL_MS  = 300;  // fill shrinks to 0% (slower)
 
 /* elements */
 const player   = document.getElementById("player");
@@ -59,7 +57,7 @@ async function preloadDurations(){
   }
 }
 
-/* ===== offset by radio clock ===== */
+/* ===== radio offset ===== */
 function computeOffsetSeconds(i){
   const dur = durations[i] || 0;
   if (dur <= 0) return 0;
@@ -90,7 +88,6 @@ function getPct(i){
   return isFinite(v) ? v : 0;
 }
 
-/* set bar height with different speeds for rise/fall */
 function setBarWithSpeed(i, targetPct){
   const prev = getPct(i);
   const isRising = targetPct > prev;
@@ -100,7 +97,6 @@ function setBarWithSpeed(i, targetPct){
   el.style.height = `${targetPct}%`;
 }
 
-/* update all bars to reflect target active index */
 function updateFills(targetIdx){
   for (let i=0;i<fills.length;i++){
     const pct = (i === targetIdx) ? DISPLAY_ACTIVE : DISPLAY_IDLE;
@@ -108,7 +104,7 @@ function updateFills(targetIdx){
   }
 }
 
-/* ===== audio dip helpers ===== */
+/* ===== audio dip ===== */
 async function dipDown(to=0.02, ms=DOWN_MS){
   return new Promise(res=>{
     const startVol = player.volume || 1;
@@ -134,7 +130,7 @@ function rampUp(to=1, ms=UP_MS){
   requestAnimationFrame(step);
 }
 
-/* ===== core switch (canplay) ===== */
+/* ===== core switch ===== */
 async function switchTo(index){
   if (switching) return;
   const t = nowMs();
@@ -143,7 +139,7 @@ async function switchTo(index){
 
   switching = true;
 
-  /* animate bars */
+  /* animate bars to new target */
   updateFills(index);
 
   const src    = URLS[index];
@@ -168,7 +164,7 @@ async function switchTo(index){
   }
 }
 
-/* ===== start flow ===== */
+/* ===== start ===== */
 async function startPlayback(){
   if (started) return;
   started = true;
@@ -198,14 +194,14 @@ function init(){
     return;
   }
 
-  /* initial bars */
+  /* initial visuals */
   for (let i=0;i<fills.length;i++) fills[i].style.height = "0%";
   updateFills(0);
 
-  /* overlay tap */
+  /* overlay start */
   startBtn.addEventListener("click", startPlayback, { passive: true });
 
-  /* also allow any screen tap to start */
+  /* allow any first tap to start */
   const startOnce = () => startPlayback();
   document.addEventListener("pointerdown", startOnce, { once:true, capture:true, passive:true });
   document.addEventListener("touchstart", startOnce,  { once:true, capture:true, passive:true });
