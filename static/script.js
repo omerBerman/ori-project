@@ -2,27 +2,33 @@
 
 /**
  * Single <audio> + radio clock + one-time start overlay.
- * - One player only.
- * - Tap active -> next station.
- * - Tap other  -> that station.
- * - Volume always 1 (audio), visual 80%.
- * - Short dip using canplay to avoid gaps.
- * - Must tap once to satisfy autoplay policy (overlay hides afterward).
+ * Logic unchanged; visuals improved:
+ * - Per-direction bar speeds:
+ *     RISE_MS  = faster
+ *     FALL_MS  = slower
+ * - Ruler alignment handled in CSS/HTML.
  */
 
 const DISPLAY_ACTIVE = 80;
 const DISPLAY_IDLE   = 0;
-const DIP_MS         = 180;
-const DOWN_MS        = Math.round(DIP_MS / 2);
-const UP_MS          = DIP_MS - DOWN_MS;
-const GRAPH_MS       = Math.round(DIP_MS * 1.25);
 
+/* audio dip timings */
+const DIP_MS   = 180;
+const DOWN_MS  = Math.round(DIP_MS / 2);
+const UP_MS    = DIP_MS - DOWN_MS;
+
+/* bar animation timings (edit these values to tune speeds) */
+const RISE_MS  = 240;  // when bar grows to 80%
+const FALL_MS  = 300;  // when bar shrinks to 0% (slower)
+
+/* elements */
 const player   = document.getElementById("player");
 const startBtn = document.getElementById("startOverlay");
 const sliders  = [...document.querySelectorAll(".v-slider")];
 const fills    = [...document.querySelectorAll(".slider-fill")];
 const URLS     = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
 
+/* state */
 let activeIdx  = 0;
 let durations  = new Array(URLS.length).fill(0);
 let radioEpoch = Date.now();
@@ -30,21 +36,20 @@ let switching  = false;
 let tapLockMs  = 0;
 let started    = false;
 
+/* utils */
 const log = (...a)=>console.log("[mixer]", ...a);
 const err = (...a)=>console.error("[mixer]", ...a);
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const nextIdx = i => (i + 1) % URLS.length;
 const nowMs   = () => performance.now();
 
-function setFill(i, pct){ if (fills[i]) fills[i].style.height = `${pct}%`; }
-function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_ACTIVE:DISPLAY_IDLE)); }
-
+/* ===== durations ===== */
 function getDuration(src){
   return new Promise(resolve=>{
     const a = new Audio();
     a.preload = "metadata";
     a.src = src;
-    a.addEventListener("loadedmetadata", ()=> resolve(isFinite(a.duration)?a.duration:0), { once:true });
+    a.addEventListener("loadedmetadata", ()=> resolve(isFinite(a.duration) ? a.duration : 0), { once:true });
     a.addEventListener("error", ()=> resolve(0), { once:true });
   });
 }
@@ -54,6 +59,7 @@ async function preloadDurations(){
   }
 }
 
+/* ===== offset by radio clock ===== */
 function computeOffsetSeconds(i){
   const dur = durations[i] || 0;
   if (dur <= 0) return 0;
@@ -61,12 +67,13 @@ function computeOffsetSeconds(i){
   return elapsed % dur;
 }
 
+/* ===== waits ===== */
 function waitEvent(el, ev, timeoutMs=5000){
   return new Promise((resolve, reject)=>{
     let done=false;
-    const ok=()=>{ if(done) return; done=true; cleanup(); resolve(); };
-    const bad=()=>{ if(done) return; done=true; cleanup(); reject(new Error(ev+" error")); };
-    const to=setTimeout(()=>{ if(done) return; done=true; cleanup(); reject(new Error("timeout "+ev)); }, timeoutMs);
+    const ok = ()=>{ if(done) return; done=true; cleanup(); resolve(); };
+    const bad= ()=>{ if(done) return; done=true; cleanup(); reject(new Error(ev+" error")); };
+    const to = setTimeout(()=>{ if(done) return; done=true; cleanup(); reject(new Error("timeout "+ev)); }, timeoutMs);
     function cleanup(){
       clearTimeout(to);
       el.removeEventListener(ev, ok);
@@ -77,18 +84,31 @@ function waitEvent(el, ev, timeoutMs=5000){
   });
 }
 
-function animateFillRise(i, targetPct, ms){
-  const startPct = parseFloat(fills[i].style.height) || 0;
-  const t0 = nowMs();
-  function loop(t){
-    const k = Math.min(1, (t - t0)/ms);
-    const pct = startPct + (targetPct - startPct)*k;
-    setFill(i, pct);
-    if (k < 1) requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
+/* ===== bar visuals ===== */
+function getPct(i){
+  const v = parseFloat(fills[i].style.height);
+  return isFinite(v) ? v : 0;
 }
 
+/* set bar height with different speeds for rise/fall */
+function setBarWithSpeed(i, targetPct){
+  const prev = getPct(i);
+  const isRising = targetPct > prev;
+  const dur = isRising ? RISE_MS : FALL_MS;
+  const el = fills[i];
+  el.style.transition = `height ${dur}ms linear`;
+  el.style.height = `${targetPct}%`;
+}
+
+/* update all bars to reflect target active index */
+function updateFills(targetIdx){
+  for (let i=0;i<fills.length;i++){
+    const pct = (i === targetIdx) ? DISPLAY_ACTIVE : DISPLAY_IDLE;
+    setBarWithSpeed(i, pct);
+  }
+}
+
+/* ===== audio dip helpers ===== */
 async function dipDown(to=0.02, ms=DOWN_MS){
   return new Promise(res=>{
     const startVol = player.volume || 1;
@@ -114,6 +134,7 @@ function rampUp(to=1, ms=UP_MS){
   requestAnimationFrame(step);
 }
 
+/* ===== core switch (canplay) ===== */
 async function switchTo(index){
   if (switching) return;
   const t = nowMs();
@@ -122,8 +143,8 @@ async function switchTo(index){
 
   switching = true;
 
-  showOnly(index);
-  animateFillRise(index, DISPLAY_ACTIVE, GRAPH_MS);
+  /* animate bars */
+  updateFills(index);
 
   const src    = URLS[index];
   const offset = computeOffsetSeconds(index);
@@ -147,14 +168,13 @@ async function switchTo(index){
   }
 }
 
-/* ---------- start flow ---------- */
+/* ===== start flow ===== */
 async function startPlayback(){
   if (started) return;
   started = true;
 
   await preloadDurations().catch(()=>{});
 
-  // start station 0
   try {
     player.src = URLS[0];
     player.loop = true;
@@ -163,45 +183,41 @@ async function startPlayback(){
     await player.play();
     try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
     player.volume = 1;
-    showOnly(0);
-    animateFillRise(0, DISPLAY_ACTIVE, GRAPH_MS);
+    updateFills(0);
   } catch(e){
     err("startPlayback play failed:", e);
   }
 
-  // hide overlay
   startBtn.style.display = "none";
 }
 
-/* ---------- init ---------- */
+/* ===== init ===== */
 function init(){
   if (!URLS.length) {
     err("no TRACK_URLS");
     return;
   }
 
-  // initial visuals
-  showOnly(0);
+  /* initial bars */
+  for (let i=0;i<fills.length;i++) fills[i].style.height = "0%";
+  updateFills(0);
 
-  // overlay click (required by autoplay policy)
+  /* overlay tap */
   startBtn.addEventListener("click", startPlayback, { passive: true });
 
-  // also allow entire screen tap to start (in case button missed)
+  /* also allow any screen tap to start */
   const startOnce = () => startPlayback();
   document.addEventListener("pointerdown", startOnce, { once:true, capture:true, passive:true });
   document.addEventListener("touchstart", startOnce,  { once:true, capture:true, passive:true });
   document.addEventListener("click", startOnce,       { once:true, capture:true, passive:true });
 
-  // slider taps
+  /* slider taps */
   sliders.forEach((slider, idx)=>{
     slider.addEventListener("pointerdown", async (e)=>{
       e.preventDefault();
-      if (!started) return;       // ignore until user started
-      if (idx === activeIdx) {
-        await switchTo(next(activeIdx));
-      } else {
-        await switchTo(idx);
-      }
+      if (!started) return;
+      if (idx === activeIdx) await switchTo(next(activeIdx));
+      else                   await switchTo(idx);
     }, { passive:false });
   });
 }

@@ -1,163 +1,144 @@
-<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iPhone 14 Grid Layout</title>
-    <style>
-        /* iPhone 14 Grid Layout CSS */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+/* ===== Global constants ===== */
+:root {
+  --bar-width: 104px;
+  --bar-height: 232px;
+  --bar-gap: 17px;
 
-        body {
-            background-color: #FFFFFF;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            overflow-x: hidden;
-        }
+  --bar-border: 3px;
+  --bar-color: #D52C38;
 
-        .container {
-            width: 100vw;
-            height: 100vh;
-            background-color: #FFFFFF;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            position: relative;
-        }
+  --ticks-color: #D52C38;
+  --inner-line-color: rgba(213, 44, 56, 0.28);
+  --inner-line-thickness: 1px;
 
-        .grid-container {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            max-width: 380px;
-            width: 100%;
-            position: relative;
-        }
+  /* default CSS transition (JS may override per direction) */
+  --fill-transition-ms: 250ms; /* ~50% slower than earlier 140ms */
+}
 
-        .grid-item {
-            width: 80px;
-            height: 120px;
-            border: 2px solid #bd0000;
-            background-color: transparent;
-            position: relative;
-        }
+/* ===== Base ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* הריבוע הראשון - מלא באדום */
-        .grid-item:first-child {
-            background-color: #bd0000;
-        }
+html, body { height: 100%; }
 
-        /* קווים פנימיים בריבועים הריקים */
-        .grid-item:not(:first-child)::before,
-        .grid-item:not(:first-child)::after {
-            content: '';
-            position: absolute;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background-color: #bd0000;
-        }
+body {
+  background: #ffffff;
+  color: var(--bar-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overscroll-behavior: contain;
+}
 
-        .grid-item:not(:first-child)::before {
-            top: 25%;
-        }
+/* start overlay */
+.start-overlay{
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: var(--bar-color);
+  font-weight: 700;
+  font-size: 24px;
+  border: none;
+  z-index: 10;
+  cursor: pointer;
+}
 
-        .grid-item:not(:first-child)::after {
-            top: 50%;
-        }
+/* spacing between columns – ensures exact 17px gap */
+.row.g-0.justify-content-center > .col-auto {
+  margin-left: calc(var(--bar-gap) / 2);
+  margin-right: calc(var(--bar-gap) / 2);
+}
 
-        /* קו נוסף */
-        .grid-item:not(:first-child) .line3 {
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 75%;
-            height: 1px;
-            background-color: #bd0000;
-        }
+/* ===== Mixer layout ===== */
+.container-fluid{
+  max-width: 844px; /* close to Figma canvas width in landscape */
+}
 
-        /* קווים צדדיים - ruler */
-        .ruler {
-            position: absolute;
-            left: calc(100% + 15px);
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            flex-direction: column;
-            height: 120px;
-            justify-content: space-between;
-        }
+.mixer-row{
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 32px; /* space between bars block and ruler */
+  width: 100%;
+}
 
-        .ruler span {
-            display: block;
-            width: 40px;
-            height: 1px;
-            background: #bd0000;
-            margin: 0;
-        }
+.bars{ margin: 0; }
 
-        /* התאמה לסיבוב מסך אופקי */
-        @media screen and (orientation: landscape) {
-            .container {
-                transform: rotate(90deg);
-                width: 100vh;
-                height: 100vw;
-            }
-        }
+/* ===== Slider bar ===== */
+.v-slider {
+  position: relative;
+  width: var(--bar-width);
+  height: var(--bar-height);
+  border: var(--bar-border) solid var(--bar-color);
+  border-radius: 0; /* sharp corners */
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  cursor: pointer;
 
-        /* התאמות רספונסיביות לסמארטפון */
-        @media screen and (max-width: 430px) {
-            .grid-container {
-                max-width: 350px;
-                gap: 15px;
-            }
-            
-            .grid-item {
-                width: 70px;
-                height: 100px;
-            }
-        }
+  /* five inner divisions */
+  background-image: linear-gradient(
+    to top,
+    var(--inner-line-color) var(--inner-line-thickness),
+    transparent 0
+  );
+  background-size: 100% calc(var(--bar-height) / 5);
+  background-position: bottom;
+  background-repeat: repeat-y;
+}
 
-        @media screen and (max-width: 375px) {
-            .grid-container {
-                max-width: 320px;
-                gap: 12px;
-            }
-            
-            .grid-item {
-                width: 65px;
-                height: 90px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="grid-container">
-            <div class="grid-item"></div>
-            <div class="grid-item">
-                <div class="line3"></div>
-            </div>
-            <div class="grid-item">
-                <div class="line3"></div>
-            </div>
-            <div class="grid-item">
-                <div class="line3"></div>
-            </div>
-        </div>
-        
-        <!-- קווים צדדיים -->
-        <div class="ruler">
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
-        </div>
-    </div>
-</body>
-</html>
+/* red fill */
+.slider-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 0%;
+  background: var(--bar-color);
+  transition: height var(--fill-transition-ms) linear;
+}
+
+/* invisible input to capture taps */
+.v-slider .vol-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* ===== Right ruler aligned to inner bar area ===== */
+.ruler{
+  flex: none;
+  height: calc(var(--bar-height) - 2 * var(--bar-border));
+  margin-top: var(--bar-border);  /* align to inner area top edge */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* 5 evenly spaced ticks */
+  pointer-events: none;
+}
+
+.ruler span{
+  display: block;
+  width: 40px;
+  height: 3px;
+  background: var(--ticks-color);
+}
+
+/* ===== Responsive tweaks ===== */
+@media (max-width: 430px) {
+  :root {
+    --bar-width: 96px;
+    --bar-height: 214px;
+    --bar-gap: 17px; /* keep exact */
+  }
+  .mixer-row{ gap: 28px; }
+}
+
+@media (max-width: 375px) {
+  :root {
+    --bar-width: 90px;
+    --bar-height: 200px;
+  }
+}

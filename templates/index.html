@@ -18,29 +18,37 @@
   </head>
 
   <body class="bg-white vh-100 d-flex justify-content-center align-items-center">
-    <!-- start overlay (one-time tap) -->
+    <!-- one-time start overlay (required by mobile autoplay policy) -->
     <button id="startOverlay" class="start-overlay" aria-label="Start">
       tap to start
     </button>
 
     <div class="container-fluid">
-      <div class="row g-0 justify-content-center">
-        {% for i in range(station_count) %}
-        <div class="col-auto mx-2">
-          <div class="v-slider" data-idx="{{ i }}" role="button" aria-label="station {{ i+1 }}">
-            <input class="vol-input" type="button" />
-            <div class="slider-fill"></div>
+      <div class="mixer-row">
+        <!-- bars block -->
+        <div class="bars row g-0 justify-content-center">
+          {% for i in range(station_count) %}
+          <div class="col-auto">
+            <div class="v-slider" data-idx="{{ i }}" role="button" aria-label="station {{ i+1 }}">
+              <input class="vol-input" type="button" />
+              <div class="slider-fill"></div>
+            </div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
 
-        <div class="col-auto d-flex flex-column justify-content-between ms-3 ruler">
-          {% for _ in range(5) %}<span></span>{% endfor %}
+        <!-- right ruler: 5 ticks -->
+        <div class="ruler" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
       </div>
     </div>
 
-    <!-- single player -->
+    <!-- single audio element -->
     <audio id="player" preload="auto" loop playsinline></audio>
 
     <script>
@@ -51,6 +59,6 @@
       ];
     </script>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=19"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=20"></script>
   </body>
 </html>
