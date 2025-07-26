@@ -1,82 +1,88 @@
 :root{
   --accent: #D52C38;
-  --bar-w: 104px;   /* רוחב עמודה לפי פיגמה */
-  --bar-h: 390px;   /* גובה עמודה לפי פיגמה */
-  --bar-gap: 17px;  /* רווח בין עמודות */
-  --line-alpha: 0.18; /* שקיפות קווי הפנים */
+  --border: 3px;
+
+  /* Figma sizes */
+  --bar-w: 104px;
+  --bar-h: 390px;
+  --bar-gap: 17px;
+
+  /* inner line alpha */
+  --line-alpha: 0.22;
 }
 
-html, body {
+html, body{
   height: 100%;
-  overscroll-behavior: contain;
 }
 
-body {
+body{
   margin: 0;
-  padding: 0;
-  background: #ffffff;
+  background: #fff;
   color: var(--accent);
   font-family: Arial, Helvetica, sans-serif;
-}
 
-/* overlay */
-.start-overlay {
-  position: fixed;
-  inset: 0;
   display: grid;
   place-items: center;
-  background: #ffffff;
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 24px;
-  border: none;
-  z-index: 10;
-  cursor: pointer;
 }
 
-/* container של העמודות – רווח 17px */
-.row.g-0.justify-content-center{
-  column-gap: var(--bar-gap);
+/* wrapper to keep the block crisp and centered */
+#mixer-wrap{
+  display: flex;
+  align-items: center;
+  gap: 24px; /* מקום לסרגל הימני */
 }
 
-/* עמודה */
-.v-slider {
+/* שורת הסליידרים עם מרווח 17px בדיוק */
+.mixer-row{
+  display: flex;
+  gap: var(--bar-gap);
+}
+
+/* סליידר – קצוות מרובעים, גבול 3px, גודל פיגמה */
+.v-slider{
   position: relative;
   width: var(--bar-w);
   height: var(--bar-h);
-  border: 3px solid var(--accent);
   box-sizing: border-box;
-  border-radius: 8px;    /* אם תרצה מרובע: 0 */
+  border: var(--border) solid var(--accent);
+  border-radius: 0;          /* חשוב: מרובע */
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
   cursor: pointer;
 
-  /* 5 קווי פנים דקים */
+  /* 4 קווי פנים בגבהים של 20%, 40%, 60%, 80% */
   background-image:
     linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
     linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
     linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
-    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
     linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px);
-  background-size: 100% 20%;
-  background-position: bottom;
-  background-repeat: repeat-y;
+  background-size:
+    100% 20%,
+    100% 20%,
+    100% 20%,
+    100% 20%;
+  background-position:
+    bottom 20% left,
+    bottom 40% left,
+    bottom 60% left,
+    bottom 80% left;
+  background-repeat: no-repeat;
 }
 
-/* המילוי האדום */
-.slider-fill {
+/* המילוי האדום – נשלט ע״י JS */
+.slider-fill{
   position: absolute;
   bottom: 0;
+  left: 0;
   width: 100%;
   height: 0%;
   background: var(--accent);
-  /* את האנימציה אנחנו שולטים ב-JS, לכן כאן בלי transition */
 }
 
-/* input שקוף ללחיצה */
-.v-slider .vol-input {
+/* קלט שקוף (אם נמצא ב-HTML) */
+.v-slider .vol-input{
   position: absolute;
   inset: 0;
   opacity: 0;
@@ -86,19 +92,48 @@ body {
   padding: 0;
 }
 
-/* סרגל ימין */
-.ruler {
+/* סרגל ימין – 4 שנתות בגבהים 20/40/60/80% */
+.ruler{
+  position: relative;
+  width: 52px;               /* רוחב נוח לשנתות */
   height: var(--bar-h);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;   /* שנתות במרווחים קבועים */
-  margin-left: 24px;
+  box-sizing: border-box;
+  /* נשווה את תחום העבודה לקווי הפנים בתוך העמודה:
+     נוריד/נעלה חצי עובי גבול כדי לקבע בדיוק מול הקו הפנימי */
+  padding-top: var(--border);
+  padding-bottom: var(--border);
+
+  display: grid;
+  grid-template-rows: repeat(5, 1fr);  /* 5 אזורי 20% */
 }
 
-.ruler span {
-  display: block;
-  width: 26px;
-  height: 3px;
+.ruler span{
+  justify-self: end;
+  width: 48px;
+  height: 6px;
   background: var(--accent);
-  border-radius: 2px;
+  border-radius: 3px;
+}
+
+/* למקם את 4 השנתות בדיוק על הגבולות בין השורות (20/40/60/80) */
+.ruler span:nth-child(1){ grid-row: 1; align-self: end; }  /* 20% */
+.ruler span:nth-child(2){ grid-row: 2; align-self: end; }  /* 40% */
+.ruler span:nth-child(3){ grid-row: 3; align-self: end; }  /* 60% */
+.ruler span:nth-child(4){ grid-row: 4; align-self: end; }  /* 80% */
+
+/* התאמה למסכי iPhone 12 (390×844) – אם חסר רוחב, נקטין סקייל עדין */
+@media (max-width: 430px){
+  #mixer-wrap{
+    transform-origin: center;
+    /* חישוב סקייל קל: ברירת המחדל משוערת, תוכל לכוונן ל-0.92/0.95 לפי הצורך */
+    transform: scale(0.95);
+  }
+}
+
+/* לנדסקייפ – נצמצם מעט כדי להישאר במרכז */
+@media (orientation: landscape) and (max-height: 420px){
+  #mixer-wrap{
+    transform-origin: center;
+    transform: scale(0.92);
+  }
 }
