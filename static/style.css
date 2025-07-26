@@ -1,87 +1,118 @@
-html, body {
+/* ===== Global constants ===== */
+:root {
+  --bar-width: 104px;
+  --bar-height: 232px;
+  --bar-gap: 17px;
+
+  --bar-border: 3px;
+  --bar-color: #D52C38;
+
+  --ticks-color: #D52C38;
+  --inner-line-color: rgba(213, 44, 56, 0.28);
+  --inner-line-thickness: 1px;
+
+  /* visual fill animation (CSS only) */
+  --fill-transition-ms: 210ms;
+}
+
+/* ===== Base ===== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
   height: 100%;
-  overscroll-behavior: contain; /* help prevent scroll while dragging */
 }
 
 body {
-  margin: 0;
-  padding: 0;
   background: #ffffff;
-  color: #bd0000;
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--bar-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overscroll-behavior: contain;
 }
 
-/* one-time start overlay */
-.start-overlay {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: #ffffff;
-  color: #bd0000;
-  font-weight: 700;
-  font-size: 24px;
-  border: none;
-  z-index: 10;
-  cursor: pointer;
+/* spacing between .col-auto items so the gap is exactly 17px */
+.row.g-0.justify-content-center > .col-auto {
+  margin-left: calc(var(--bar-gap) / 2);
+  margin-right: calc(var(--bar-gap) / 2);
 }
 
-/* slider container */
+/* ===== Slider bar ===== */
 .v-slider {
   position: relative;
-  width: 80px;           /* adjust to match your design */
-  height: 400px;         /* total bar height */
-  border: 3px solid #bd0000;
-  box-sizing: border-box;
-  border-radius: 8px;    /* if you want square corners: set to 0 */
+  width: var(--bar-width);
+  height: var(--bar-height);
+  border: var(--bar-border) solid var(--bar-color);
+  border-radius: 0; /* sharp corners */
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
   cursor: pointer;
+
+  /* five inner divisions */
+  background-image: linear-gradient(
+    to top,
+    var(--inner-line-color) var(--inner-line-thickness),
+    transparent 0
+  );
+  background-size: 100% calc(var(--bar-height) / 5);
+  background-position: bottom;
+  background-repeat: repeat-y;
 }
 
-/* the fill (red) */
+/* red fill */
 .slider-fill {
   position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  width: 100%;
   height: 0%;
-  background: #bd0000;
-  transition: height 0.05s linear;
+  background: var(--bar-color);
+  transition: height var(--fill-transition-ms) linear;
 }
 
-/* invisible range input to capture consistent pointer events */
+/* invisible input to capture taps */
 .v-slider .vol-input {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   opacity: 0;
   -webkit-appearance: none;
   appearance: none;
   margin: 0;
   padding: 0;
+  border: 0;
 }
 
-/* inner lines */
-.v-slider {
-  background-image:
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px);
-  background-size: 100% 20%;
-  background-position: bottom;
-  background-repeat: repeat-y;
-}
-
-/* ruler on the right */
+/* ===== Right ruler ===== */
 .ruler span {
   display: block;
   width: 40px;
   height: 3px;
-  background: #bd0000;
-  margin: 30px 0; /* adjust spacing */
+  background: var(--ticks-color);
+  margin: 30px 0;
+}
+
+/* ===== Layout helpers ===== */
+.container-fluid {
+  max-width: 844px; /* close to the Figma canvas width in landscape */
+}
+
+/* ===== Responsive tweaks ===== */
+@media (max-width: 430px) {
+  :root {
+    --bar-width: 96px;
+    --bar-height: 214px;
+    --bar-gap: 17px; /* keep exact gap */
+  }
+}
+
+@media (max-width: 375px) {
+  :root {
+    --bar-width: 90px;
+    --bar-height: 200px;
+  }
 }
