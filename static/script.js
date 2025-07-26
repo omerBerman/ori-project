@@ -1,50 +1,52 @@
 "use strict";
 
 /**
- * WebAudio mixer – robust mobile start.
- * - One active track at a time.
- * - Tap active  => next.
- * - Tap other   => that one.
- * - Visual 75% vs 0%.
- * - Strong resume on first user gesture (pointerdown/touchstart/click).
- * - Verbose console logs for debugging on mobile.
+ * WebAudio mixer – mobile robust.
+ * No <audio> tags are used. We decode MP3s to buffers, create BufferSources,
+ * and control per-track GainNodes. One active track at a time.
  */
 
-const DISPLAY_PCT = 75;
-const FADE_MS     = 300;
+const DISPLAY_PCT = 75;   // visual height when active
+const FADE_MS     = 300;  // crossfade duration (ms)
 
 const sliders = [...document.querySelectorAll(".v-slider")];
 const fills   = [...document.querySelectorAll(".slider-fill")];
 const urls    = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
 
-let ctx           = null;
-let gains         = [];
-let buffers       = [];
-let sources       = [];
-let active        = 0;
-let fading        = false;
-let started       = false;   // sources created & started
-let resumed       = false;   // AudioContext is running
-let fadeStartMs   = 0;
-
 const log = (...a) => console.log("[mixer]", ...a);
 const err = (...a) => console.error("[mixer]", ...a);
+
+let ctx        = null;
+let gains      = [];
+let buffers    = [];
+let sources    = [];
+let active     = 0;
+let fading     = false;
+let started    = false;   // sources created and started
+let resumed    = false;   // AudioContext is running
+
+/* ---------- helpers ---------- */
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const nextIdx = i => (i + 1) % urls.length;
 
-function setFill(i, pct){ fills[i].style.height = `${pct}%`; }
-function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_PCT:0)); }
+function setFill(i, pct) {
+  if (fills[i]) fills[i].style.height = `${pct}%`;
+}
 
-function computeOffsetSeconds(duration){
+function showOnly(i) {
+  sliders.forEach((_, idx) => setFill(idx, idx === i ? DISPLAY_PCT : 0));
+}
+
+function computeOffsetSeconds(duration) {
   if (!isFinite(duration) || duration <= 0) return 0;
   return (Date.now() / 1000) % duration;
 }
 
-function startSourceFor(i){
+function startSourceFor(i) {
   const src = ctx.createBufferSource();
   src.buffer = buffers[i];
-  src.loop   = true;
+  src.loop = true;
 
   const g = gains[i] || ctx.createGain();
   g.gain.value = (i === active) ? 1 : 0;
@@ -56,32 +58,32 @@ function startSourceFor(i){
   sources[i] = src;
 }
 
-function buildGraph(){
+function buildGraph() {
   if (started) return;
-  log("buildGraph: creating gains & sources");
-  gains = urls.map(()=> ctx.createGain());
-  gains.forEach((g,i)=> g.gain.value = (i===active?1:0));
+  log("buildGraph: creating", urls.length, "sources");
+  gains = urls.map(() => ctx.createGain());
+  gains.forEach((g, i) => g.gain.value = (i === active ? 1 : 0));
   sources = new Array(urls.length);
-  for (let i=0; i<urls.length; i++){
+  for (let i = 0; i < urls.length; i++) {
     startSourceFor(i);
   }
   started = true;
 }
 
-async function loadAllBuffers(){
+async function loadAllBuffers() {
   const out = [];
-  for (const u of urls){
+  for (const u of urls) {
     log("fetch", u);
     const res = await fetch(u, { cache: "force-cache" });
     if (!res.ok) throw new Error(`fetch failed ${u} status=${res.status}`);
-    const ab  = await res.arrayBuffer();
+    const ab = await res.arrayBuffer();
     const buf = await ctx.decodeAudioData(ab);
     out.push(buf);
   }
   return out;
 }
 
-async function ensureContext(){
+async function ensureContext() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     log("AudioContext created, state:", ctx.state);
@@ -90,7 +92,7 @@ async function ensureContext(){
     try {
       await ctx.resume();
       log("AudioContext resumed:", ctx.state);
-    } catch(e){
+    } catch (e) {
       err("resume failed", e);
     }
   }
@@ -98,26 +100,28 @@ async function ensureContext(){
   return resumed;
 }
 
-async function ensureBuffers(){
+async function ensureBuffers() {
   if (buffers.length === 0) {
     log("decoding buffers…");
     buffers = await loadAllBuffers();
-    log("buffers decoded:", buffers.map(b=>b.duration.toFixed(2)));
+    log("buffers decoded:", buffers.map(b => b.duration.toFixed(2)));
   }
 }
 
-async function ensureGraph(){
+async function ensureGraph() {
   await ensureContext();
   await ensureBuffers();
   buildGraph();
 }
 
-function crossfadeTo(target){
+/* ---------- crossfade ---------- */
+
+function crossfadeTo(target) {
   if (fading) return;
   if (target === active) { showOnly(target); return; }
-  if (!resumed || !started) {
-    // will be re-called after resume/graph
-    ensureGraph().then(()=> crossfadeTo(target)).catch(err);
+
+  if (!resumed || !started || !gains[target]) {
+    ensureGraph().then(() => crossfadeTo(target)).catch(err);
     return;
   }
 
@@ -125,13 +129,13 @@ function crossfadeTo(target){
   showOnly(target);
 
   const from = active;
-  const to   = target;
+  const to = target;
 
   const gFrom = gains[from];
-  const gTo   = gains[to];
+  const gTo = gains[to];
 
   const start = ctx.currentTime;
-  const end   = start + FADE_MS / 1000;
+  const end = start + FADE_MS / 1000;
 
   gFrom.gain.cancelScheduledValues(start);
   gTo.gain.cancelScheduledValues(start);
@@ -142,9 +146,9 @@ function crossfadeTo(target){
   gTo.gain.setValueAtTime(gTo.gain.value, start);
   gTo.gain.linearRampToValueAtTime(1, end);
 
-  fadeStartMs = performance.now();
+  const doneAt = performance.now() + FADE_MS;
   const tick = () => {
-    if (performance.now() - fadeStartMs >= FADE_MS) {
+    if (performance.now() >= doneAt) {
       active = to;
       fading = false;
     } else {
@@ -154,51 +158,55 @@ function crossfadeTo(target){
   requestAnimationFrame(tick);
 }
 
-/* ---------- gesture bootstrap (very robust) ---------- */
+/* ---------- bootstrap ---------- */
 
-async function firstGesture(){
-  log("firstGesture fired");
+async function firstGesture() {
+  log("firstGesture");
   try {
     await ensureGraph();
-  } catch(e){
+    // Make sure visuals match
+    showOnly(active);
+  } catch (e) {
     err("ensureGraph failed", e);
   }
 }
 
-/* also catch clicks, just in case */
-function attachGlobalGestures(){
-  // capture to be first
-  document.addEventListener("pointerdown", firstGesture, { once: true, capture: true, passive: true });
-  document.addEventListener("touchstart", firstGesture,   { once: true, capture: true, passive: true });
-  document.addEventListener("click", firstGesture,        { once: true, capture: true, passive: true });
+function attachGlobalGestures() {
+  const optsOnceCap = { once: true, capture: true, passive: true };
+  document.addEventListener("pointerdown", firstGesture, optsOnceCap);
+  document.addEventListener("touchstart", firstGesture, optsOnceCap);
+  document.addEventListener("click", firstGesture, optsOnceCap);
 }
 
-/* ---------- init ---------- */
-
-document.addEventListener("DOMContentLoaded", () => {
-  log("DOMContentLoaded, urls:", urls);
+async function init() {
+  log("DOMContentLoaded, TRACK_URLS:", urls);
   if (!urls.length) {
-    err("no TRACK_URLS provided – nothing to play");
+    err("No TRACK_URLS – nothing to play");
   }
 
   showOnly(0);
   attachGlobalGestures();
 
-  // slider taps
+  // Also try eager initialization (if browser allows autoplay)
+  try {
+    await ensureGraph();
+  } catch (e) {
+    // It's okay; the first user gesture will resume and complete it.
+    log("eager ensureGraph failed; will retry on gesture:", e?.message || e);
+  }
+
+  // Bar taps
   sliders.forEach((slider, idx) => {
     slider.style.touchAction = "manipulation";
     slider.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      // if not ready, ensure graph then switch
-      if (!started || !resumed || buffers.length === 0) {
-        ensureGraph().then(()=>{
-          if (idx === active) crossfadeTo(nextIdx(active));
-          else                crossfadeTo(idx);
-        }).catch(err);
-        return;
-      }
-      if (idx === active) crossfadeTo(nextIdx(active));
-      else                crossfadeTo(idx);
+      // Guarantee graph is ready; then switch
+      ensureGraph().then(() => {
+        if (idx === active) crossfadeTo(nextIdx(active));
+        else crossfadeTo(idx);
+      }).catch(err);
     }, { passive: false });
   });
-});
+}
+
+document.addEventListener("DOMContentLoaded", init);
