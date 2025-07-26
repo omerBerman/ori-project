@@ -1,157 +1,204 @@
 "use strict";
 
 /**
- * Tap-only mixer:
+ * WebAudio mixer – robust mobile start.
  * - One active track at a time.
- * - Tap active bar  -> switch to NEXT bar.
- * - Tap other bar   -> switch to THAT bar.
- * - Visual is 75%, audio volume is 1.0.
+ * - Tap active  => next.
+ * - Tap other   => that one.
+ * - Visual 75% vs 0%.
+ * - Strong resume on first user gesture (pointerdown/touchstart/click).
+ * - Verbose console logs for debugging on mobile.
  */
 
 const DISPLAY_PCT = 75;
-const FULL_VOL    = 1;
-const ZERO_VOL    = 0;
-const XFADE_MS    = 300;
+const FADE_MS     = 300;
 
 const sliders = [...document.querySelectorAll(".v-slider")];
 const fills   = [...document.querySelectorAll(".slider-fill")];
-const tracks  = [...document.querySelectorAll(".track")];
+const urls    = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
 
-let active   = 0;
-let busy     = false;
-let unlocked = false;
+let ctx           = null;
+let gains         = [];
+let buffers       = [];
+let sources       = [];
+let active        = 0;
+let fading        = false;
+let started       = false;   // sources created & started
+let resumed       = false;   // AudioContext is running
+let fadeStartMs   = 0;
+
+const log = (...a) => console.log("[mixer]", ...a);
+const err = (...a) => console.error("[mixer]", ...a);
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
+const nextIdx = i => (i + 1) % urls.length;
 
-function nextIndex(i) {
-  return (i + 1) % tracks.length;
+function setFill(i, pct){ fills[i].style.height = `${pct}%`; }
+function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_PCT:0)); }
+
+function computeOffsetSeconds(duration){
+  if (!isFinite(duration) || duration <= 0) return 0;
+  return (Date.now() / 1000) % duration;
 }
 
-function setFill(i, pct) {
-  fills[i].style.height = `${pct}%`;
+function startSourceFor(i){
+  const src = ctx.createBufferSource();
+  src.buffer = buffers[i];
+  src.loop   = true;
+
+  const g = gains[i] || ctx.createGain();
+  g.gain.value = (i === active) ? 1 : 0;
+  src.connect(g).connect(ctx.destination);
+
+  const offset = computeOffsetSeconds(buffers[i].duration);
+  src.start(0, offset);
+
+  sources[i] = src;
 }
 
-function showOnly(iTarget) {
-  sliders.forEach((_, i) => setFill(i, i === iTarget ? DISPLAY_PCT : 0));
+function buildGraph(){
+  if (started) return;
+  log("buildGraph: creating gains & sources");
+  gains = urls.map(()=> ctx.createGain());
+  gains.forEach((g,i)=> g.gain.value = (i===active?1:0));
+  sources = new Array(urls.length);
+  for (let i=0; i<urls.length; i++){
+    startSourceFor(i);
+  }
+  started = true;
 }
 
-function setVolumesInstant(iTarget) {
-  tracks.forEach((t, i) => {
-    t.volume = clamp01(i === iTarget ? FULL_VOL : ZERO_VOL);
-  });
+async function loadAllBuffers(){
+  const out = [];
+  for (const u of urls){
+    log("fetch", u);
+    const res = await fetch(u, { cache: "force-cache" });
+    if (!res.ok) throw new Error(`fetch failed ${u} status=${res.status}`);
+    const ab  = await res.arrayBuffer();
+    const buf = await ctx.decodeAudioData(ab);
+    out.push(buf);
+  }
+  return out;
 }
 
-function ensurePlayAll() {
-  tracks.forEach(t => t.play().catch(()=>{}));
+async function ensureContext(){
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    log("AudioContext created, state:", ctx.state);
+  }
+  if (ctx.state !== "running") {
+    try {
+      await ctx.resume();
+      log("AudioContext resumed:", ctx.state);
+    } catch(e){
+      err("resume failed", e);
+    }
+  }
+  resumed = (ctx.state === "running");
+  return resumed;
 }
 
-function unlock() {
-  if (unlocked) return;
-  unlocked = true;
-  tracks.forEach(t => {
-    t.muted = false;
-    t.play().catch(()=>{});
-  });
-}
-
-function syncTimes(from, to) {
-  if (isFinite(from.duration) && isFinite(to.duration)) {
-    to.currentTime = from.currentTime % to.duration;
+async function ensureBuffers(){
+  if (buffers.length === 0) {
+    log("decoding buffers…");
+    buffers = await loadAllBuffers();
+    log("buffers decoded:", buffers.map(b=>b.duration.toFixed(2)));
   }
 }
 
-/** quick crossfade; if target==active -> just ensure states */
-function crossfadeTo(targetIdx) {
-  if (busy) return;
+async function ensureGraph(){
+  await ensureContext();
+  await ensureBuffers();
+  buildGraph();
+}
 
-  if (targetIdx === active) {
-    // nothing to fade; just enforce states
-    showOnly(active);
-    setVolumesInstant(active);
+function crossfadeTo(target){
+  if (fading) return;
+  if (target === active) { showOnly(target); return; }
+  if (!resumed || !started) {
+    // will be re-called after resume/graph
+    ensureGraph().then(()=> crossfadeTo(target)).catch(err);
     return;
   }
 
-  busy = true;
-  ensurePlayAll();
+  fading = true;
+  showOnly(target);
 
-  const fromIdx = active;
-  const toIdx   = targetIdx;
+  const from = active;
+  const to   = target;
 
-  const from = tracks[fromIdx];
-  const to   = tracks[toIdx];
+  const gFrom = gains[from];
+  const gTo   = gains[to];
 
-  const doFade = () => {
-    syncTimes(from, to);
-    to.muted = false;
-    to.volume = 0;
-    to.play().catch(()=>{});
-    showOnly(toIdx);
+  const start = ctx.currentTime;
+  const end   = start + FADE_MS / 1000;
 
-    const start = performance.now();
+  gFrom.gain.cancelScheduledValues(start);
+  gTo.gain.cancelScheduledValues(start);
 
-    function step(now) {
-      const t  = (now - start) / XFADE_MS;
-      const tc = clamp01(t);
-      const vOut = clamp01((1 - tc) * FULL_VOL);
-      const vIn  = clamp01(tc * FULL_VOL);
+  gFrom.gain.setValueAtTime(gFrom.gain.value, start);
+  gFrom.gain.linearRampToValueAtTime(0, end);
 
-      from.volume = vOut;
-      to.volume   = vIn;
+  gTo.gain.setValueAtTime(gTo.gain.value, start);
+  gTo.gain.linearRampToValueAtTime(1, end);
 
-      if (tc < 1) {
-        requestAnimationFrame(step);
-      } else {
-        from.pause();
-        from.currentTime = to.currentTime;
-        active = toIdx;
-        busy = false;
-      }
+  fadeStartMs = performance.now();
+  const tick = () => {
+    if (performance.now() - fadeStartMs >= FADE_MS) {
+      active = to;
+      fading = false;
+    } else {
+      requestAnimationFrame(tick);
     }
-    requestAnimationFrame(step);
   };
+  requestAnimationFrame(tick);
+}
 
-  if (!isFinite(to.duration) || !isFinite(from.duration)) {
-    const once = () => {
-      to.removeEventListener("loadedmetadata", once);
-      from.removeEventListener("loadedmetadata", once);
-      doFade();
-    };
-    to.addEventListener("loadedmetadata", once, { once: true });
-    from.addEventListener("loadedmetadata", once, { once: true });
-    to.play().catch(()=>{});
-  } else {
-    doFade();
+/* ---------- gesture bootstrap (very robust) ---------- */
+
+async function firstGesture(){
+  log("firstGesture fired");
+  try {
+    await ensureGraph();
+  } catch(e){
+    err("ensureGraph failed", e);
   }
 }
 
-function init() {
-  tracks.forEach(t => {
-    t.loop = true;
-    t.volume = 0;
-    t.play().catch(()=>{});
-  });
+/* also catch clicks, just in case */
+function attachGlobalGestures(){
+  // capture to be first
+  document.addEventListener("pointerdown", firstGesture, { once: true, capture: true, passive: true });
+  document.addEventListener("touchstart", firstGesture,   { once: true, capture: true, passive: true });
+  document.addEventListener("click", firstGesture,        { once: true, capture: true, passive: true });
+}
 
-  // visual + audio default: station 0
+/* ---------- init ---------- */
+
+document.addEventListener("DOMContentLoaded", () => {
+  log("DOMContentLoaded, urls:", urls);
+  if (!urls.length) {
+    err("no TRACK_URLS provided – nothing to play");
+  }
+
   showOnly(0);
-  setVolumesInstant(0);
-  const first = tracks[0];
-  first.muted = false;
-  first.play().catch(()=>{});
+  attachGlobalGestures();
 
+  // slider taps
   sliders.forEach((slider, idx) => {
     slider.style.touchAction = "manipulation";
     slider.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      unlock();
-      if (busy) return;
-
-      if (idx === active) {
-        crossfadeTo(nextIndex(active));   // tapping active -> next
-      } else {
-        crossfadeTo(idx);                 // tapping other -> that one
+      // if not ready, ensure graph then switch
+      if (!started || !resumed || buffers.length === 0) {
+        ensureGraph().then(()=>{
+          if (idx === active) crossfadeTo(nextIdx(active));
+          else                crossfadeTo(idx);
+        }).catch(err);
+        return;
       }
+      if (idx === active) crossfadeTo(nextIdx(active));
+      else                crossfadeTo(idx);
     }, { passive: false });
   });
-}
-
-document.addEventListener("DOMContentLoaded", init);
+});
