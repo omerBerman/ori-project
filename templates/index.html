@@ -18,6 +18,11 @@
   </head>
 
   <body class="bg-white vh-100 d-flex justify-content-center align-items-center">
+    <!-- start overlay (one-time tap) -->
+    <button id="startOverlay" class="start-overlay" aria-label="Start">
+      tap to start
+    </button>
+
     <div class="container-fluid">
       <div class="row g-0 justify-content-center">
         {% for i in range(station_count) %}
@@ -35,9 +40,8 @@
       </div>
     </div>
 
-    <!-- dual players for fast, tiny crossfade -->
-    <audio id="playerA" preload="auto" loop playsinline></audio>
-    <audio id="playerB" preload="auto" loop playsinline></audio>
+    <!-- single player -->
+    <audio id="player" preload="auto" loop playsinline></audio>
 
     <script>
       window.TRACK_URLS = [
@@ -47,6 +51,6 @@
       ];
     </script>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=16"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=19"></script>
   </body>
 </html>

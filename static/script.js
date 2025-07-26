@@ -1,62 +1,59 @@
 "use strict";
 
 /**
- * Single <audio> with a "radio clock".
+ * Single <audio> + radio clock + one-time start overlay.
  * - One player only.
- * - Tap active -> switch to NEXT station.
- * - Tap other  -> switch to THAT station.
- * - Volume is always 1 during playback.
- * - Switch uses a short dip with canplay readiness to avoid gaps.
- * - Visual bar: 0% or 80%. UI rise is 25% slower than audio dip.
+ * - Tap active -> next station.
+ * - Tap other  -> that station.
+ * - Volume always 1 (audio), visual 80%.
+ * - Short dip using canplay to avoid gaps.
+ * - Must tap once to satisfy autoplay policy (overlay hides afterward).
  */
 
-const DISPLAY_ACTIVE = 80;          // visual percent when active
+const DISPLAY_ACTIVE = 80;
 const DISPLAY_IDLE   = 0;
-const DIP_MS         = 180;         // total dip time (down+up ≈ 180ms)
+const DIP_MS         = 180;
 const DOWN_MS        = Math.round(DIP_MS / 2);
 const UP_MS          = DIP_MS - DOWN_MS;
-const GRAPH_MS       = Math.round(DIP_MS * 1.25);  // 25% slower UI
+const GRAPH_MS       = Math.round(DIP_MS * 1.25);
 
-const player  = document.getElementById("player");
-const sliders = [...document.querySelectorAll(".v-slider")];
-const fills   = [...document.querySelectorAll(".slider-fill")];
-const URLS    = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
+const player   = document.getElementById("player");
+const startBtn = document.getElementById("startOverlay");
+const sliders  = [...document.querySelectorAll(".v-slider")];
+const fills    = [...document.querySelectorAll(".slider-fill")];
+const URLS     = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
 
-let activeIdx   = 0;
-let durations   = new Array(URLS.length).fill(0);
-let radioEpoch  = Date.now();  // base clock for "radio" sync
-let switching   = false;
-let unlocked    = false;
-let tapLockMs   = 0;           // debounce taps during switch
+let activeIdx  = 0;
+let durations  = new Array(URLS.length).fill(0);
+let radioEpoch = Date.now();
+let switching  = false;
+let tapLockMs  = 0;
+let started    = false;
 
 const log = (...a)=>console.log("[mixer]", ...a);
 const err = (...a)=>console.error("[mixer]", ...a);
+const clamp01 = v => Math.max(0, Math.min(1, v));
+const nextIdx = i => (i + 1) % URLS.length;
+const nowMs   = () => performance.now();
 
 function setFill(i, pct){ if (fills[i]) fills[i].style.height = `${pct}%`; }
-function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i ? DISPLAY_ACTIVE : DISPLAY_IDLE)); }
-function nextIdx(i){ return (i + 1) % URLS.length; }
-const clamp01 = v => Math.max(0, Math.min(1, v));
+function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_ACTIVE:DISPLAY_IDLE)); }
 
-function now(){ return performance.now(); }
-
-/* ---------- durations ---------- */
 function getDuration(src){
   return new Promise(resolve=>{
     const a = new Audio();
     a.preload = "metadata";
     a.src = src;
-    a.addEventListener("loadedmetadata", ()=> resolve(isFinite(a.duration) ? a.duration : 0), { once: true });
-    a.addEventListener("error", ()=> resolve(0), { once: true });
+    a.addEventListener("loadedmetadata", ()=> resolve(isFinite(a.duration)?a.duration:0), { once:true });
+    a.addEventListener("error", ()=> resolve(0), { once:true });
   });
 }
 async function preloadDurations(){
   for (let i=0;i<URLS.length;i++){
-    durations[i] = await getDuration(URLS[i]);
-    log("duration", i, durations[i].toFixed(2));
+    durations[i] = await getDuration(URLS[i]).catch(()=>0);
   }
 }
 
-/* ---------- offsets ---------- */
 function computeOffsetSeconds(i){
   const dur = durations[i] || 0;
   if (dur <= 0) return 0;
@@ -64,13 +61,12 @@ function computeOffsetSeconds(i){
   return elapsed % dur;
 }
 
-/* ---------- waits ---------- */
 function waitEvent(el, ev, timeoutMs=5000){
   return new Promise((resolve, reject)=>{
-    let done = false;
-    const ok  = ()=>{ if(done) return; done=true; cleanup(); resolve(); };
-    const bad = ()=>{ if(done) return; done=true; cleanup(); reject(new Error(ev+" error")); };
-    const to  = setTimeout(()=>{ if(done) return; done=true; cleanup(); reject(new Error("timeout "+ev)); }, timeoutMs);
+    let done=false;
+    const ok=()=>{ if(done) return; done=true; cleanup(); resolve(); };
+    const bad=()=>{ if(done) return; done=true; cleanup(); reject(new Error(ev+" error")); };
+    const to=setTimeout(()=>{ if(done) return; done=true; cleanup(); reject(new Error("timeout "+ev)); }, timeoutMs);
     function cleanup(){
       clearTimeout(to);
       el.removeEventListener(ev, ok);
@@ -81,24 +77,22 @@ function waitEvent(el, ev, timeoutMs=5000){
   });
 }
 
-/* ---------- visuals ---------- */
-function animateFillRise(i, target, ms){
+function animateFillRise(i, targetPct, ms){
   const startPct = parseFloat(fills[i].style.height) || 0;
-  const t0 = now();
+  const t0 = nowMs();
   function loop(t){
     const k = Math.min(1, (t - t0)/ms);
-    const pct = startPct + (target - startPct)*k;
+    const pct = startPct + (targetPct - startPct)*k;
     setFill(i, pct);
     if (k < 1) requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 }
 
-/* ---------- volume dip ---------- */
 async function dipDown(to=0.02, ms=DOWN_MS){
   return new Promise(res=>{
     const startVol = player.volume || 1;
-    const t0 = now();
+    const t0 = nowMs();
     function step(t){
       const k = Math.min(1, (t - t0)/ms);
       const v = startVol + (to - startVol)*k;
@@ -110,7 +104,7 @@ async function dipDown(to=0.02, ms=DOWN_MS){
 }
 function rampUp(to=1, ms=UP_MS){
   const startVol = player.volume || 0.02;
-  const t0 = now();
+  const t0 = nowMs();
   function step(t){
     const k = Math.min(1, (t - t0)/ms);
     const v = startVol + (to - startVol)*k;
@@ -120,14 +114,14 @@ function rampUp(to=1, ms=UP_MS){
   requestAnimationFrame(step);
 }
 
-/* ---------- core switch using canplay ---------- */
 async function switchTo(index){
   if (switching) return;
-  const nowMs = performance.now();
-  if (nowMs < tapLockMs) return;   // debounce
-  tapLockMs = nowMs + DIP_MS + 80;
+  const t = nowMs();
+  if (t < tapLockMs) return;
+  tapLockMs = t + DIP_MS + 120;
 
   switching = true;
+
   showOnly(index);
   animateFillRise(index, DISPLAY_ACTIVE, GRAPH_MS);
 
@@ -135,72 +129,74 @@ async function switchTo(index){
   const offset = computeOffsetSeconds(index);
 
   try {
-    // dip quickly
     await dipDown(0.02, DOWN_MS);
 
-    // swap src and load enough to play seamlessly
     player.src = src;
     player.load();
-    await waitEvent(player, "canplay", 5000).catch(()=>{}); // stronger than loadedmetadata
-
+    await waitEvent(player, "canplay", 5000).catch(()=>{});
     try { player.currentTime = offset; } catch(_){}
     await player.play().catch(()=>{});
     try { player.currentTime = offset; } catch(_){}
 
-    // back up
     rampUp(1, UP_MS);
     activeIdx = index;
   } catch(e){
-    err("switchTo failed", e);
+    err("switchTo failed:", e);
   } finally {
     switching = false;
   }
 }
 
-/* ---------- unlock ---------- */
-function attachUnlock(){
-  const once = async () => {
-    if (unlocked) return;
-    unlocked = true;
-    try { await player.play(); } catch(_) {}
-  };
-  const opts = { once:true, capture:true, passive:true };
-  document.addEventListener("pointerdown", once, opts);
-  document.addEventListener("touchstart", once,  opts);
-  document.addEventListener("click", once,       opts);
-}
+/* ---------- start flow ---------- */
+async function startPlayback(){
+  if (started) return;
+  started = true;
 
-/* ---------- init ---------- */
-async function init(){
-  log("init", URLS);
-  if (!URLS.length) {
-    err("no TRACK_URLS – nothing to play");
-    return;
-  }
+  await preloadDurations().catch(()=>{});
 
-  showOnly(0);
-  attachUnlock();
-  preloadDurations().catch(()=>{});
-
-  // try start station 0
+  // start station 0
   try {
     player.src = URLS[0];
     player.loop = true;
     await waitEvent(player, "canplay", 5000).catch(()=>{});
     try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
-    await player.play().catch(()=>{});
+    await player.play();
     try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
     player.volume = 1;
+    showOnly(0);
     animateFillRise(0, DISPLAY_ACTIVE, GRAPH_MS);
   } catch(e){
-    err("autoplay failed; will start on first tap", e?.message || e);
+    err("startPlayback play failed:", e);
   }
 
-  // taps
+  // hide overlay
+  startBtn.style.display = "none";
+}
+
+/* ---------- init ---------- */
+function init(){
+  if (!URLS.length) {
+    err("no TRACK_URLS");
+    return;
+  }
+
+  // initial visuals
+  showOnly(0);
+
+  // overlay click (required by autoplay policy)
+  startBtn.addEventListener("click", startPlayback, { passive: true });
+
+  // also allow entire screen tap to start (in case button missed)
+  const startOnce = () => startPlayback();
+  document.addEventListener("pointerdown", startOnce, { once:true, capture:true, passive:true });
+  document.addEventListener("touchstart", startOnce,  { once:true, capture:true, passive:true });
+  document.addEventListener("click", startOnce,       { once:true, capture:true, passive:true });
+
+  // slider taps
   sliders.forEach((slider, idx)=>{
-    slider.style.touchAction = "manipulation";
     slider.addEventListener("pointerdown", async (e)=>{
       e.preventDefault();
+      if (!started) return;       // ignore until user started
       if (idx === activeIdx) {
         await switchTo(next(activeIdx));
       } else {
