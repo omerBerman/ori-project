@@ -1,22 +1,18 @@
 "use strict";
 
-/**
- * Single <audio> + radio clock + one-time start overlay.
- * - One player only.
- * - Tap active -> next station.
- * - Tap other  -> that station.
- * - Volume always 1 (audio), visual 80%.
- * - Short dip using canplay to avoid gaps.
- * - Must tap once to satisfy autoplay policy (overlay hides afterward).
- */
-
+/* ───── visuals timing ─────
+   new bar rises fast, old bar falls slow */
 const DISPLAY_ACTIVE = 80;
 const DISPLAY_IDLE   = 0;
-const DIP_MS         = 180;
-const DOWN_MS        = Math.round(DIP_MS / 2);
-const UP_MS          = DIP_MS - DOWN_MS;
-const GRAPH_MS       = Math.round(DIP_MS * 1.25);
 
+const DIP_MS   = 180;                  // audio dip/canplay/ramp (כמו קודם)
+const DOWN_MS  = Math.round(DIP_MS/2);
+const UP_MS    = DIP_MS - DOWN_MS;
+
+const RISE_MS  = 160;                  // new bar fill (מהר)
+const FALL_MS  = 420;                  // old bar fall (איטי ≈60% איטי יותר)
+
+/* elements & data */
 const player   = document.getElementById("player");
 const startBtn = document.getElementById("startOverlay");
 const sliders  = [...document.querySelectorAll(".v-slider")];
@@ -30,6 +26,7 @@ let switching  = false;
 let tapLockMs  = 0;
 let started    = false;
 
+/* utils */
 const log = (...a)=>console.log("[mixer]", ...a);
 const err = (...a)=>console.error("[mixer]", ...a);
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -39,6 +36,7 @@ const nowMs   = () => performance.now();
 function setFill(i, pct){ if (fills[i]) fills[i].style.height = `${pct}%`; }
 function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_ACTIVE:DISPLAY_IDLE)); }
 
+/* durations */
 function getDuration(src){
   return new Promise(resolve=>{
     const a = new Audio();
@@ -53,7 +51,6 @@ async function preloadDurations(){
     durations[i] = await getDuration(URLS[i]).catch(()=>0);
   }
 }
-
 function computeOffsetSeconds(i){
   const dur = durations[i] || 0;
   if (dur <= 0) return 0;
@@ -61,6 +58,7 @@ function computeOffsetSeconds(i){
   return elapsed % dur;
 }
 
+/* waits */
 function waitEvent(el, ev, timeoutMs=5000){
   return new Promise((resolve, reject)=>{
     let done=false;
@@ -77,7 +75,8 @@ function waitEvent(el, ev, timeoutMs=5000){
   });
 }
 
-function animateFillRise(i, targetPct, ms){
+/* animations */
+function animateTo(i, targetPct, ms){
   const startPct = parseFloat(fills[i].style.height) || 0;
   const t0 = nowMs();
   function loop(t){
@@ -114,6 +113,7 @@ function rampUp(to=1, ms=UP_MS){
   requestAnimationFrame(step);
 }
 
+/* switch */
 async function switchTo(index){
   if (switching) return;
   const t = nowMs();
@@ -122,8 +122,10 @@ async function switchTo(index){
 
   switching = true;
 
-  showOnly(index);
-  animateFillRise(index, DISPLAY_ACTIVE, GRAPH_MS);
+  // visual: old falls slow, new rises fast
+  const oldIdx = activeIdx;
+  if (oldIdx !== index) animateTo(oldIdx, DISPLAY_IDLE, FALL_MS);
+  animateTo(index, DISPLAY_ACTIVE, RISE_MS);
 
   const src    = URLS[index];
   const offset = computeOffsetSeconds(index);
@@ -147,14 +149,13 @@ async function switchTo(index){
   }
 }
 
-/* ---------- start flow ---------- */
+/* start flow */
 async function startPlayback(){
   if (started) return;
   started = true;
 
   await preloadDurations().catch(()=>{});
 
-  // start station 0
   try {
     player.src = URLS[0];
     player.loop = true;
@@ -164,41 +165,34 @@ async function startPlayback(){
     try { player.currentTime = computeOffsetSeconds(0); } catch(_){}
     player.volume = 1;
     showOnly(0);
-    animateFillRise(0, DISPLAY_ACTIVE, GRAPH_MS);
+    // לוודא שהמילוי מתחיל ב־80%
+    animateTo(0, DISPLAY_ACTIVE, RISE_MS);
   } catch(e){
     err("startPlayback play failed:", e);
   }
 
-  // hide overlay
   startBtn.style.display = "none";
 }
 
-/* ---------- init ---------- */
+/* init */
 function init(){
-  if (!URLS.length) {
-    err("no TRACK_URLS");
-    return;
-  }
+  if (!URLS.length) { err("no TRACK_URLS"); return; }
 
-  // initial visuals
   showOnly(0);
 
-  // overlay click (required by autoplay policy)
-  startBtn.addEventListener("click", startPlayback, { passive: true });
+  startBtn.addEventListener("click", startPlayback, { passive:true });
 
-  // also allow entire screen tap to start (in case button missed)
   const startOnce = () => startPlayback();
   document.addEventListener("pointerdown", startOnce, { once:true, capture:true, passive:true });
   document.addEventListener("touchstart", startOnce,  { once:true, capture:true, passive:true });
   document.addEventListener("click", startOnce,       { once:true, capture:true, passive:true });
 
-  // slider taps
   sliders.forEach((slider, idx)=>{
     slider.addEventListener("pointerdown", async (e)=>{
       e.preventDefault();
-      if (!started) return;       // ignore until user started
+      if (!started) return;
       if (idx === activeIdx) {
-        await switchTo(next(activeIdx));
+        await switchTo(nextIdx(activeIdx));
       } else {
         await switchTo(idx);
       }

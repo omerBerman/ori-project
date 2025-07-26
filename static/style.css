@@ -1,24 +1,32 @@
+:root{
+  --accent: #D52C38;
+  --bar-w: 104px;   /* רוחב עמודה לפי פיגמה */
+  --bar-h: 390px;   /* גובה עמודה לפי פיגמה */
+  --bar-gap: 17px;  /* רווח בין עמודות */
+  --line-alpha: 0.18; /* שקיפות קווי הפנים */
+}
+
 html, body {
   height: 100%;
-  overscroll-behavior: contain; /* help prevent scroll while dragging */
+  overscroll-behavior: contain;
 }
 
 body {
   margin: 0;
   padding: 0;
   background: #ffffff;
-  color: #bd0000;
+  color: var(--accent);
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* one-time start overlay */
+/* overlay */
 .start-overlay {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
   background: #ffffff;
-  color: #bd0000;
+  color: var(--accent);
   font-weight: 700;
   font-size: 24px;
   border: none;
@@ -26,38 +34,51 @@ body {
   cursor: pointer;
 }
 
-/* slider container */
+/* container של העמודות – רווח 17px */
+.row.g-0.justify-content-center{
+  column-gap: var(--bar-gap);
+}
+
+/* עמודה */
 .v-slider {
   position: relative;
-  width: 80px;           /* adjust to match your design */
-  height: 400px;         /* total bar height */
-  border: 3px solid #bd0000;
+  width: var(--bar-w);
+  height: var(--bar-h);
+  border: 3px solid var(--accent);
   box-sizing: border-box;
-  border-radius: 8px;    /* if you want square corners: set to 0 */
+  border-radius: 8px;    /* אם תרצה מרובע: 0 */
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
   cursor: pointer;
+
+  /* 5 קווי פנים דקים */
+  background-image:
+    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
+    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
+    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
+    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px),
+    linear-gradient(to top, rgba(213,44,56,var(--line-alpha)) 1px, transparent 1px);
+  background-size: 100% 20%;
+  background-position: bottom;
+  background-repeat: repeat-y;
 }
 
-/* the fill (red) */
+/* המילוי האדום */
 .slider-fill {
   position: absolute;
   bottom: 0;
   width: 100%;
   height: 0%;
-  background: #bd0000;
-  transition: height 0.05s linear;
+  background: var(--accent);
+  /* את האנימציה אנחנו שולטים ב-JS, לכן כאן בלי transition */
 }
 
-/* invisible range input to capture consistent pointer events */
+/* input שקוף ללחיצה */
 .v-slider .vol-input {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   opacity: 0;
   -webkit-appearance: none;
   appearance: none;
@@ -65,23 +86,19 @@ body {
   padding: 0;
 }
 
-/* inner lines */
-.v-slider {
-  background-image:
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px),
-    linear-gradient(to top, rgba(189,0,0,0.15) 1px, transparent 1px);
-  background-size: 100% 20%;
-  background-position: bottom;
-  background-repeat: repeat-y;
+/* סרגל ימין */
+.ruler {
+  height: var(--bar-h);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;   /* שנתות במרווחים קבועים */
+  margin-left: 24px;
 }
 
-/* ruler on the right */
 .ruler span {
   display: block;
-  width: 40px;
+  width: 26px;
   height: 3px;
-  background: #bd0000;
-  margin: 30px 0; /* adjust spacing */
+  background: var(--accent);
+  border-radius: 2px;
 }
