@@ -1,28 +1,27 @@
 "use strict";
 
 /**
- * Tap-only logic:
+ * Tap-only mixer:
  * - One active track at a time.
- * - Tap active bar  -> switch to NEXT bar (crossfade).
- * - Tap other bar   -> switch to THAT bar (crossfade).
- * - Visual fill is 75%, audio volume is FULL (1.0).
- * - Single event: pointerdown (prevents double firing).
+ * - Tap active bar  -> switch to NEXT bar.
+ * - Tap other bar   -> switch to THAT bar.
+ * - Visual is 75%, audio volume is 1.0.
  */
 
-const DISPLAY_PCT = 75;   // red fill height (visual)
+const DISPLAY_PCT = 75;
 const FULL_VOL    = 1;
 const ZERO_VOL    = 0;
-const XFADE_MS    = 300;  // quick, smooth crossfade
+const XFADE_MS    = 300;
 
 const sliders = [...document.querySelectorAll(".v-slider")];
 const fills   = [...document.querySelectorAll(".slider-fill")];
 const tracks  = [...document.querySelectorAll(".track")];
 
 let active   = 0;
-let busy     = false;     // guard during crossfade
+let busy     = false;
 let unlocked = false;
 
-/* ---------- helpers ---------- */
+const clamp01 = v => Math.max(0, Math.min(1, v));
 
 function nextIndex(i) {
   return (i + 1) % tracks.length;
@@ -37,7 +36,9 @@ function showOnly(iTarget) {
 }
 
 function setVolumesInstant(iTarget) {
-  tracks.forEach((t, i) => (t.volume = i === iTarget ? FULL_VOL : ZERO_VOL));
+  tracks.forEach((t, i) => {
+    t.volume = clamp01(i === iTarget ? FULL_VOL : ZERO_VOL);
+  });
 }
 
 function ensurePlayAll() {
@@ -53,18 +54,24 @@ function unlock() {
   });
 }
 
-/* keep radio-style sync: jump into the same point */
 function syncTimes(from, to) {
   if (isFinite(from.duration) && isFinite(to.duration)) {
     to.currentTime = from.currentTime % to.duration;
   }
 }
 
-/* quick crossfade between current active and target */
+/** quick crossfade; if target==active -> just ensure states */
 function crossfadeTo(targetIdx) {
   if (busy) return;
-  busy = true;
 
+  if (targetIdx === active) {
+    // nothing to fade; just enforce states
+    showOnly(active);
+    setVolumesInstant(active);
+    return;
+  }
+
+  busy = true;
   ensurePlayAll();
 
   const fromIdx = active;
@@ -73,84 +80,75 @@ function crossfadeTo(targetIdx) {
   const from = tracks[fromIdx];
   const to   = tracks[toIdx];
 
-  // if metadata not ready, wait once then try again
-  if (!isFinite(to.duration) || !isFinite(from.duration)) {
-    const onLoaded = () => {
-      to.removeEventListener("loadedmetadata", onLoaded);
-      from.removeEventListener("loadedmetadata", onLoaded);
-      crossfadeTo(targetIdx);
-    };
-    to.addEventListener("loadedmetadata", onLoaded, { once: true });
-    from.addEventListener("loadedmetadata", onLoaded, { once: true });
+  const doFade = () => {
+    syncTimes(from, to);
+    to.muted = false;
+    to.volume = 0;
     to.play().catch(()=>{});
-    return;
-  }
+    showOnly(toIdx);
 
-  syncTimes(from, to);
-  to.muted = false;
-  to.volume = 0;
-  to.play().catch(()=>{});
+    const start = performance.now();
 
-  // update visuals immediately
-  showOnly(toIdx);
+    function step(now) {
+      const t  = (now - start) / XFADE_MS;
+      const tc = clamp01(t);
+      const vOut = clamp01((1 - tc) * FULL_VOL);
+      const vIn  = clamp01(tc * FULL_VOL);
 
-  const start = performance.now();
+      from.volume = vOut;
+      to.volume   = vIn;
 
-  function step(now) {
-    const t = Math.min(1, (now - start) / XFADE_MS);
-    const vOut = (1 - t) * FULL_VOL;
-    const vIn  = t * FULL_VOL;
-
-    from.volume = vOut;
-    to.volume   = vIn;
-
-    if (t < 1) {
-      requestAnimationFrame(step);
-    } else {
-      from.pause();
-      // keep sync linkage
-      from.currentTime = to.currentTime;
-      active = toIdx;
-      busy = false;
+      if (tc < 1) {
+        requestAnimationFrame(step);
+      } else {
+        from.pause();
+        from.currentTime = to.currentTime;
+        active = toIdx;
+        busy = false;
+      }
     }
+    requestAnimationFrame(step);
+  };
+
+  if (!isFinite(to.duration) || !isFinite(from.duration)) {
+    const once = () => {
+      to.removeEventListener("loadedmetadata", once);
+      from.removeEventListener("loadedmetadata", once);
+      doFade();
+    };
+    to.addEventListener("loadedmetadata", once, { once: true });
+    from.addEventListener("loadedmetadata", once, { once: true });
+    to.play().catch(()=>{});
+  } else {
+    doFade();
   }
-  requestAnimationFrame(step);
 }
 
-/* ---------- bootstrap ---------- */
-
 function init() {
-  // start all tracks muted, then unmute first gradually
   tracks.forEach(t => {
     t.loop = true;
     t.volume = 0;
     t.play().catch(()=>{});
   });
 
-  // visual default
+  // visual + audio default: station 0
   showOnly(0);
-
-  // try autoplay (some browsers allow). first user tap will call unlock() if needed.
+  setVolumesInstant(0);
   const first = tracks[0];
   first.muted = false;
   first.play().catch(()=>{});
-  crossfadeTo(0); // quick ramp to make sure we end with active=0
 
-  // single event per bar
   sliders.forEach((slider, idx) => {
     slider.style.touchAction = "manipulation";
     slider.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       unlock();
-
       if (busy) return;
 
       if (idx === active) {
-        // tap active => move to next
-        crossfadeTo(nextIndex(active));
+        crossfadeTo(nextIndex(active));   // tapping active -> next
       } else {
-        // tap other => activate that specific bar
-        crossfadeTo(idx);
+        crossfadeTo(idx);                 // tapping other -> that one
       }
     }, { passive: false });
   });
