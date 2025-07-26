@@ -1,211 +1,161 @@
 "use strict";
 
 /**
- * WebAudio mixer – mobile robust.
- * No <audio> tags are used. We decode MP3s to buffers, create BufferSources,
- * and control per-track GainNodes. One active track at a time.
+ * Simplest stable mobile version:
+ * - Single <audio id="player"> element.
+ * - One station active at a time.
+ * - Tap active  -> switch to NEXT station.
+ * - Tap other   -> switch to THAT station.
+ * - Visual: active bar shows 75%, others 0%.
+ * - Audio volume always 1. No crossfade.
+ * - "Radio-like": enter mid-song using Date.now() % duration.
  */
 
-const DISPLAY_PCT = 75;   // visual height when active
-const FADE_MS     = 300;  // crossfade duration (ms)
+const DISPLAY_PCT = 75;
 
+const player  = document.getElementById("player");
 const sliders = [...document.querySelectorAll(".v-slider")];
 const fills   = [...document.querySelectorAll(".slider-fill")];
-const urls    = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
+const URLS    = Array.isArray(window.TRACK_URLS) ? window.TRACK_URLS : [];
+
+let active    = 0;
+let durations = new Array(URLS.length).fill(NaN);
+let ready     = false;     // durations loaded
+let tryingPlay = false;
 
 const log = (...a) => console.log("[mixer]", ...a);
 const err = (...a) => console.error("[mixer]", ...a);
 
-let ctx        = null;
-let gains      = [];
-let buffers    = [];
-let sources    = [];
-let active     = 0;
-let fading     = false;
-let started    = false;   // sources created and started
-let resumed    = false;   // AudioContext is running
+function setFill(i, pct){ fills[i].style.height = `${pct}%`; }
+function showOnly(i){ sliders.forEach((_,idx)=> setFill(idx, idx===i?DISPLAY_PCT:0)); }
+function nextIdx(i){ return (i + 1) % URLS.length; }
 
-/* ---------- helpers ---------- */
-
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const nextIdx = i => (i + 1) % urls.length;
-
-function setFill(i, pct) {
-  if (fills[i]) fills[i].style.height = `${pct}%`;
-}
-
-function showOnly(i) {
-  sliders.forEach((_, idx) => setFill(idx, idx === i ? DISPLAY_PCT : 0));
-}
-
-function computeOffsetSeconds(duration) {
-  if (!isFinite(duration) || duration <= 0) return 0;
-  return (Date.now() / 1000) % duration;
-}
-
-function startSourceFor(i) {
-  const src = ctx.createBufferSource();
-  src.buffer = buffers[i];
-  src.loop = true;
-
-  const g = gains[i] || ctx.createGain();
-  g.gain.value = (i === active) ? 1 : 0;
-  src.connect(g).connect(ctx.destination);
-
-  const offset = computeOffsetSeconds(buffers[i].duration);
-  src.start(0, offset);
-
-  sources[i] = src;
-}
-
-function buildGraph() {
-  if (started) return;
-  log("buildGraph: creating", urls.length, "sources");
-  gains = urls.map(() => ctx.createGain());
-  gains.forEach((g, i) => g.gain.value = (i === active ? 1 : 0));
-  sources = new Array(urls.length);
-  for (let i = 0; i < urls.length; i++) {
-    startSourceFor(i);
+/**
+ * Preload metadata to get durations. Fast, small memory footprint.
+ * We reuse a single temp Audio element per file.
+ */
+async function loadDurations(){
+  for (let i=0; i<URLS.length; i++){
+    durations[i] = await getDuration(URLS[i]);
+    log("duration", i, durations[i]);
   }
-  started = true;
+  ready = true;
 }
 
-async function loadAllBuffers() {
-  const out = [];
-  for (const u of urls) {
-    log("fetch", u);
-    const res = await fetch(u, { cache: "force-cache" });
-    if (!res.ok) throw new Error(`fetch failed ${u} status=${res.status}`);
-    const ab = await res.arrayBuffer();
-    const buf = await ctx.decodeAudioData(ab);
-    out.push(buf);
-  }
-  return out;
+function getDuration(src){
+  return new Promise(resolve=>{
+    const a = new Audio();
+    a.preload = "metadata";
+    a.src = src;
+    a.addEventListener("loadedmetadata", () => {
+      resolve(isFinite(a.duration) ? a.duration : 0);
+    }, { once: true });
+    a.addEventListener("error", () => resolve(0), { once: true });
+  });
 }
 
-async function ensureContext() {
-  if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    log("AudioContext created, state:", ctx.state);
+function computeOffset(i){
+  const dur = durations[i] || 0;
+  if (dur <= 0) return 0;
+  const off = (Date.now() / 1000) % dur;
+  return off;
+}
+
+/**
+ * Switch the single player to URLS[i], seek to offset, and play.
+ * Robust order for iOS:
+ *  - set src
+ *  - wait loadedmetadata
+ *  - set currentTime
+ *  - play()
+ *  - if play() rejected → wait for first user gesture to retry
+ */
+async function playStation(i){
+  active = i;
+  showOnly(i);
+
+  const src = URLS[i];
+  player.loop = true;
+
+  // set src (doing this first resets the element)
+  player.src = src;
+
+  const offset = computeOffset(i);
+
+  await waitLoaded(player).catch(()=>{});
+
+  // set currentTime; some iOS versions want this after play() too, so do both.
+  try { player.currentTime = offset; } catch(_) {}
+
+  // attempt to play
+  try {
+    tryingPlay = true;
+    await player.play();
+    tryingPlay = false;
+    // ensure seek applied
+    try { player.currentTime = offset; } catch(_) {}
+  } catch(e){
+    tryingPlay = false;
+    err("play rejected, will wait for user gesture", e?.message || e);
   }
-  if (ctx.state !== "running") {
-    try {
-      await ctx.resume();
-      log("AudioContext resumed:", ctx.state);
-    } catch (e) {
-      err("resume failed", e);
+}
+
+function waitLoaded(aud){
+  return new Promise((resolve, reject)=>{
+    if (isFinite(aud.duration) && aud.duration > 0) return resolve();
+    const onMeta = () => { cleanup(); resolve(); };
+    const onErr  = (e) => { cleanup(); reject(e); };
+    function cleanup(){
+      aud.removeEventListener("loadedmetadata", onMeta);
+      aud.removeEventListener("error", onErr);
     }
-  }
-  resumed = (ctx.state === "running");
-  return resumed;
+    aud.addEventListener("loadedmetadata", onMeta, { once: true });
+    aud.addEventListener("error", onErr, { once: true });
+  });
 }
 
-async function ensureBuffers() {
-  if (buffers.length === 0) {
-    log("decoding buffers…");
-    buffers = await loadAllBuffers();
-    log("buffers decoded:", buffers.map(b => b.duration.toFixed(2)));
-  }
+/* user gesture unlock: retry play if needed */
+function attachUnlock(){
+  const once = async () => {
+    if (!ready) await loadDurations().catch(()=>{});
+    if (player.paused || player.readyState < 2) {
+      await playStation(active);
+    }
+  };
+  document.addEventListener("pointerdown", once, { once:true, capture:true, passive:true });
+  document.addEventListener("touchstart", once, { once:true, capture:true, passive:true });
+  document.addEventListener("click", once, { once:true, capture:true, passive:true });
 }
 
-async function ensureGraph() {
-  await ensureContext();
-  await ensureBuffers();
-  buildGraph();
-}
-
-/* ---------- crossfade ---------- */
-
-function crossfadeTo(target) {
-  if (fading) return;
-  if (target === active) { showOnly(target); return; }
-
-  if (!resumed || !started || !gains[target]) {
-    ensureGraph().then(() => crossfadeTo(target)).catch(err);
+/* ---- init ---- */
+async function init(){
+  log("init, urls:", URLS);
+  if (!URLS.length) {
+    err("no TRACK_URLS");
     return;
   }
 
-  fading = true;
-  showOnly(target);
-
-  const from = active;
-  const to = target;
-
-  const gFrom = gains[from];
-  const gTo = gains[to];
-
-  const start = ctx.currentTime;
-  const end = start + FADE_MS / 1000;
-
-  gFrom.gain.cancelScheduledValues(start);
-  gTo.gain.cancelScheduledValues(start);
-
-  gFrom.gain.setValueAtTime(gFrom.gain.value, start);
-  gFrom.gain.linearRampToValueAtTime(0, end);
-
-  gTo.gain.setValueAtTime(gTo.gain.value, start);
-  gTo.gain.linearRampToValueAtTime(1, end);
-
-  const doneAt = performance.now() + FADE_MS;
-  const tick = () => {
-    if (performance.now() >= doneAt) {
-      active = to;
-      fading = false;
-    } else {
-      requestAnimationFrame(tick);
-    }
-  };
-  requestAnimationFrame(tick);
-}
-
-/* ---------- bootstrap ---------- */
-
-async function firstGesture() {
-  log("firstGesture");
-  try {
-    await ensureGraph();
-    // Make sure visuals match
-    showOnly(active);
-  } catch (e) {
-    err("ensureGraph failed", e);
-  }
-}
-
-function attachGlobalGestures() {
-  const optsOnceCap = { once: true, capture: true, passive: true };
-  document.addEventListener("pointerdown", firstGesture, optsOnceCap);
-  document.addEventListener("touchstart", firstGesture, optsOnceCap);
-  document.addEventListener("click", firstGesture, optsOnceCap);
-}
-
-async function init() {
-  log("DOMContentLoaded, TRACK_URLS:", urls);
-  if (!urls.length) {
-    err("No TRACK_URLS – nothing to play");
-  }
-
   showOnly(0);
-  attachGlobalGestures();
+  attachUnlock();
 
-  // Also try eager initialization (if browser allows autoplay)
-  try {
-    await ensureGraph();
-  } catch (e) {
-    // It's okay; the first user gesture will resume and complete it.
-    log("eager ensureGraph failed; will retry on gesture:", e?.message || e);
-  }
+  // try preload durations (best-effort)
+  loadDurations().catch(()=>{});
 
-  // Bar taps
-  sliders.forEach((slider, idx) => {
+  // try to start automatically
+  await playStation(0);
+
+  // taps
+  sliders.forEach((slider, idx)=>{
     slider.style.touchAction = "manipulation";
-    slider.addEventListener("pointerdown", (e) => {
+    slider.addEventListener("pointerdown", async (e)=>{
       e.preventDefault();
-      // Guarantee graph is ready; then switch
-      ensureGraph().then(() => {
-        if (idx === active) crossfadeTo(nextIdx(active));
-        else crossfadeTo(idx);
-      }).catch(err);
-    }, { passive: false });
+
+      if (idx === active) {
+        await playStation(nextIdx(active));
+      } else {
+        await playStation(idx);
+      }
+    }, { passive:false });
   });
 }
 

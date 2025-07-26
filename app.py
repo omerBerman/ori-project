@@ -26,7 +26,6 @@ def index():
 
 @app.route("/favicon.ico")
 def favicon():
-    # avoid 404
     return ("", 204)
 
 

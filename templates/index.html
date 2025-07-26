@@ -35,7 +35,10 @@
       </div>
     </div>
 
-    <!-- provide the track urls to JS -->
+    <!-- single audio player -->
+    <audio id="player" preload="auto" loop playsinline></audio>
+
+    <!-- provide urls to JS -->
     <script>
       window.TRACK_URLS = [
         {% for src in audio_files -%}
@@ -44,6 +47,6 @@
       ];
     </script>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=13"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=15"></script>
   </body>
 </html>
