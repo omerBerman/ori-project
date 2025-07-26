@@ -1,22 +1,15 @@
-"""
-Flask server for the radio mixer project.
-"""
-
 import os
 from pathlib import Path
 from flask import Flask, render_template
 
-STATION_COUNT = 4  # number of channels
+STATION_COUNT = 4
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
 
 def get_audio_files():
-    """
-    Return only file names (no directory prefix) from static/audio.
-    """
     audio_dir = Path(app.static_folder) / "audio"
-    return sorted([f.name for f in audio_dir.glob("*.mp3")])
+    return sorted([p.name for p in audio_dir.glob("*.mp3")])
 
 
 AUDIO_FILES = get_audio_files()
@@ -33,7 +26,7 @@ def index():
 
 @app.route("/favicon.ico")
 def favicon():
-    # avoid 404 for favicon
+    # avoid 404
     return ("", 204)
 
 
