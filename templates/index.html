@@ -35,18 +35,15 @@
       </div>
     </div>
 
-    {% for src in audio_files %}
-    <audio
-      class="track"
-      src="{{ url_for('static', filename='audio/' ~ src) }}"
-      preload="auto"
-      loop
-      autoplay
-      muted
-      playsinline
-    ></audio>
-    {% endfor %}
+    <!-- provide the track urls to JS -->
+    <script>
+      window.TRACK_URLS = [
+        {% for src in audio_files -%}
+        "{{ url_for('static', filename='audio/' ~ src) }}"{% if not loop.last %},{% endif %}
+        {%- endfor %}
+      ];
+    </script>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=10"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=13"></script>
   </body>
 </html>
